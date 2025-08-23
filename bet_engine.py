@@ -1002,7 +1002,7 @@ class BetEngine(WebsiteOpener):
             lambda d: any(len(d.find_elements(By.CSS_SELECTOR, sel)) > 0 for sel in target_selectors)
         )
 
-    def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False):
+    def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None):
         """
         Place a bet on Nairabet using Selenium
         
@@ -1015,6 +1015,8 @@ class BetEngine(WebsiteOpener):
         - stake: Amount to stake
         - points: Points value for total/spread bets
         - is_first_half: Whether this is a first half bet
+        - home_team: Name of the home team (from shaped_data)
+        - away_team: Name of the away team (from shaped_data)
         
         Returns:
         - True if bet was placed successfully, False otherwise
@@ -1036,7 +1038,7 @@ class BetEngine(WebsiteOpener):
                 logger.warning(f"Market content not detected within wait window: {e}")
             
             # Find and click the market/outcome
-            market_element = self.__get_market_selector(market_type, outcome, points, is_first_half)
+            market_element = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team)
             # logger.info(f"Market element: {market_element}")
             if not market_element:
                 logger.error("Could not find market element")
@@ -1334,7 +1336,7 @@ class BetEngine(WebsiteOpener):
             traceback.print_exc()
             return False
 
-    def __get_market_selector(self, market_type, outcome, points=None, is_first_half=False):
+    def __get_market_selector(self, market_type, outcome, points=None, is_first_half=False, home_team=None, away_team=None):
         """
         Get the CSS selector for a specific market and outcome on Nairabet
         
@@ -1343,6 +1345,8 @@ class BetEngine(WebsiteOpener):
         - outcome: Outcome to bet on
         - points: Points value for total/spread bets
         - is_first_half: Whether this is a first half bet
+        - home_team: Name of the home team (from shaped_data)
+        - away_team: Name of the away team (from shaped_data)
         
         Returns:
         - Element or None if not found
@@ -1354,9 +1358,9 @@ class BetEngine(WebsiteOpener):
         if is_first_half:
             # Click halftime button first
             try:
-                # Wait for the first half button to be present and clickable
+                # Wait for the first half button to be present and clickable (4th li element)
                 halftime_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "ul.snap-nav.tw-relative.tw-flex.tw-select-none.tw-whitespace-nowrap li.m-sub-nav-item.snap-nav-item:nth-child(5)"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, ".event-details__market-groups .horizontal-scroll-box__body li:nth-child(4) .horizontal-selector-option"))
                 )
                 
                 # Try regular click first
@@ -1409,8 +1413,7 @@ class BetEngine(WebsiteOpener):
             # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
             if abs(float(points)) < 0.01:  # Using small threshold for floating point comparison
                 logger.warning(f"Handicap is 0, looking for DNB (Draw No Bet) market instead of Asian Handicap")
-                # For DNB, we need to determine team names from the current page
-                home_team, away_team = self.__get_team_names()
+                # For DNB, use team names from shaped_data (passed as parameters)
                 return self.__find_dnb_outcome(outcome_lower, is_first_half, home_team, away_team)
             
             return self.__find_handicap_outcome(points, outcome_lower)
@@ -1749,74 +1752,33 @@ class BetEngine(WebsiteOpener):
                         # If we found both outcomes or the specific one we need, break
                         if target_cell is not None:
                             break
-                        
+                
             except Exception as e:
                     # Cell doesn't have expected structure, continue to next
-                    continue
-                
+                        continue
+                    
             if not target_cell:
                 logger.warning(f"Could not find target cell for DNB {outcome}")
             return None
-
+            
             # Get the button inside this cell
-                            button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-                            
-                            # Verify odds
-                            try:
-                                odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                                odds_text = odds_element.text.strip()
-                logger.info(f"Found DNB {outcome} with odds: {odds_text}")
-                                return button
-                            except Exception as e:
-                logger.error(f"Could not find odds in DNB outcome: {e}")
+                button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
+                
+                # Verify odds
+                try:
+                    odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
+                    odds_text = odds_element.text.strip()
+                    logger.info(f"Found DNB {outcome} with odds: {odds_text}")
+                    return button
+                except Exception as e:
+                    logger.error(f"Could not find odds in DNB outcome: {e}")
             return None
             
         except Exception as e:
             logger.error(f"Error finding DNB outcome: {e}")
             return None
 
-    def __get_team_names(self):
-        """
-        Get the home and away team names from the current page
         
-        Returns:
-        - Tuple of (home_team, away_team) or (None, None) if not found
-        """
-        try:
-            # Look for team names in the event header or title
-            # This might need adjustment based on the actual HTML structure
-            team_elements = self.driver.find_elements(By.CSS_SELECTOR, ".event-header__teams .event-header__team-name, .event-title .team-name")
-            
-            if len(team_elements) >= 2:
-                home_team = team_elements[0].text.strip()
-                away_team = team_elements[1].text.strip()
-                logger.info(f"Found teams: {home_team} vs {away_team}")
-                return home_team, away_team
-            
-            # Alternative: look for team names in the 1X2 market
-            try:
-                market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
-                event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
-                
-                if event_markets:
-                    # Get the first event-market div (1X2 market)
-                    market_div = event_markets[0]
-                    cells = market_div.find_elements(By.CSS_SELECTOR, ".event-market__cell")
-                    
-                    if len(cells) >= 3:
-                        home_team = cells[0].find_element(By.CSS_SELECTOR, ".event-market__cell-title").text.strip()
-                        away_team = cells[2].find_element(By.CSS_SELECTOR, ".event-market__cell-title").text.strip()
-                        logger.info(f"Found teams from 1X2 market: {home_team} vs {away_team}")
-                        return home_team, away_team
-                except Exception as e:
-                logger.warning(f"Could not get team names from 1X2 market: {e}")
-            
-            logger.warning("Could not determine team names")
-            return None, None
-            
-        except Exception as e:
-            logger.error(f"Error getting team names: {e}")
-            return None, None
 
     def __place_bet_with_available_account(self, bet_data):
         """
@@ -1873,7 +1835,9 @@ class BetEngine(WebsiteOpener):
                         bet_data["odds"],
                         bet_data["stake"],  # Use pre-calculated stake
                         bet_data["shaped_data"]["category"]["meta"].get("value"),
-                        bet_data.get("is_first_half", False)
+                        bet_data.get("is_first_half", False),
+                        bet_data["shaped_data"]["game"]["home"],  # home_team from shaped_data
+                        bet_data["shaped_data"]["game"]["away"]   # away_team from shaped_data
                     )
                     
                     if success:
