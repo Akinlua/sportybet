@@ -1,16 +1,16 @@
 {
     "accounts": [
         {
-            "username": "8168309913",
-            "password": "numeric0157",
+            "username": "isaacdungmunen@gmail.com",
+            "password": "Dung@2003",
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://brd-customer-hl_3fa1037b-zone-datacenter_proxy1-country-ng:be0682squyj3@brd.superproxy.io:33335"
+            "proxy": null
         }
     ],
     "max_total_concurrent_bets": 20,
-    "use_proxies": true,
+    "use_proxies": false,
     "immediate_bet_placement": true,
     "browser": {
         "use_existing": true,
