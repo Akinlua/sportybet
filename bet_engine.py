@@ -992,14 +992,9 @@ class BetEngine(WebsiteOpener):
             # Continue to element-based checks even if readyState wait fails
             pass
         
-        target_selectors = [
-            ".m-market-item",
-            ".m-market-row.m-market-row--3",
-            ".m-market-row.m-market-row",
-        ]
-        
+        # Wait for the active market group to be present
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
-            lambda d: any(len(d.find_elements(By.CSS_SELECTOR, sel)) > 0 for sel in target_selectors)
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active"))
         )
 
     def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None):
@@ -1104,198 +1099,65 @@ class BetEngine(WebsiteOpener):
                     logger.error(f"Could not click market element: {e}")
                     return False
             
-            # Enter stake amount
+            # Enter stake amount using new Nairabet selectors
             try:
-                # Use JavaScript to properly handle the stake input
-                stake_js_script = """
-                const wrapper = document.querySelector('.m-edit-wrap.tw-flex.tw-items-center.tw-justify-end');
-
-                if (wrapper) {
-                  // get all input elements and filter by classList instead of using invalid selectors
-                  const inputs = wrapper.querySelectorAll('input');
-                  const input = Array.from(inputs).find(el => 
-                    el.classList.contains('v-input--inner') &&
-                    el.classList.contains('tw-box-border') &&
-                    el.classList.contains('tw-flex-1')
-                  );
-
-                  if (input) {
-                    input.value = ''; // clear
-                    input.value = arguments[0]; // set new value
-
-                    // dispatch input event to notify frameworks
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    console.log('✅ Input cleared and updated.');
-                    return true;
-                  } else {
-                    console.warn('⚠️ Input not found inside wrapper.');
-                    return false;
-                  }
-                } else {
-                  console.warn('⚠️ Wrapper div not found.');
-                  return false;
-                }
-                """
+                # Find the stake input using the new selector structure
+                stake_input = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-acca-bet__stake .betslip-stake .form-input__input"))
+                )
                 
-                # Execute the JavaScript with the stake value
-                result = self.driver.execute_script(stake_js_script, str(10))
-                # result = self.driver.execute_script(stake_js_script, str(stake))
-                
-                if result:
-                    logger.info(f"✅ Successfully entered stake: {stake} using JavaScript")
-                    # time.sleep(1)
-                else:
-                    logger.error("❌ JavaScript stake input failed, trying fallback methods")
-                    
-                    # Fallback to Selenium methods if JavaScript fails
-                    stake_input = None
-                    fallback_selectors = [
-                        ".m-edit-wrap input",
-                        ".v-input--inner",
-                        "input[type='number']",
-                        "input[class*='v-input']"
-                    ]
-                    
-                    for selector in fallback_selectors:
-                        try:
-                            stake_input = WebDriverWait(self.driver, 5).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                            )
-                            logger.info(f"Found stake input using fallback selector: {selector}")
-                            break
-                        except TimeoutException:
-                            continue
-                    
-                    if not stake_input:
-                        logger.error("Could not find stake input field")
-                        return False
-                    
-                    # Clear and enter stake with Selenium
+                # Clear existing value and enter new stake
                     stake_input.clear()
-                    # time.sleep(0.5)
-                    # stake_input.send_keys(str(stake))
-                    stake_input.send_keys(str(10))
-                    logger.info(f"Entered stake using Selenium fallback: {stake}")
-                    # time.sleep(1)
+                stake_input.send_keys(str(stake))
+                logger.info(f"✅ Successfully entered stake: {stake}")
                 
             except Exception as e:
                 logger.error(f"Error entering stake: {e}")
                 return False
             
-            # Place the bet
+            # Place the bet using new Nairabet selectors
             try:
-                # Use the specific CSS selector for bet button
-                place_bet_button = None
-                
-                try:
+                # Wait for the bet button to be clickable
                     place_bet_button = WebDriverWait(self.driver, 10).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button.v-button.m-place-btn"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
+                )
+                
+                # Check the button text to determine action needed
+                button_text = place_bet_button.text.strip()
+                logger.info(f"Found bet button with text: {button_text}")
+                
+                # Click the button
+                place_bet_button.click()
+                logger.info("Clicked bet button")
+                
+                # If button says "Accept Odds...", we need to click again after waiting
+                if "accept odds" in button_text.lower():
+                    logger.info("Button requires odds acceptance, waiting and clicking again...")
+                    time.sleep(1)  # Wait a moment for button to update
+                    
+                    # Wait for button to update and click again
+                    updated_button = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
                     )
-                    logger.info("Found place bet button using specific CSS class")
-                    
-                except Exception as e:
-                    logger.error(f"Could not find bet button with specific class: {e}")
-                    
-                    # Fallback selectors
-                    fallback_button_selectors = [
-                        ".v-button",
-                        ".m-place-btn", 
-                        "button[class*='place']",
-                        "button[class*='bet']",
-                        "//button[@type='submit']",
-                        "//button[contains(@class, 'place-bet')]",
-                        "//button[contains(@class, 'bet-submit')]",
-                        "//button[contains(text(), 'Place Bet')]",
-                        "//button[contains(text(), 'Bet')]"
-                    ]
-                    
-                    for selector in fallback_button_selectors:
-                        try:
-                            if selector.startswith("//"):
-                                place_bet_button = WebDriverWait(self.driver, 5).until(
-                                    EC.element_to_be_clickable((By.XPATH, selector))
-                                )
-                            else:
-                                place_bet_button = WebDriverWait(self.driver, 5).until(
-                                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                                )
-                            logger.info(f"Found bet button using fallback selector: {selector}")
-                            break
-                        except TimeoutException:
-                            continue
+                    updated_button.click()
+                    logger.info("Clicked updated bet button")
                 
-                if not place_bet_button:
-                    logger.error("Could not find place bet button")
-                    return False
-                
-                # Improved scrolling and clicking approach for bet button (same as market selector)
+                # Wait for success confirmation
                 try:
-                    # First, scroll the button into view with some offset to avoid other elements
-                    self.driver.execute_script("""
-                        var element = arguments[0];
-                        var elementRect = element.getBoundingClientRect();
-                        var absoluteElementTop = elementRect.top + window.pageYOffset;
-                        var middle = absoluteElementTop - (window.innerHeight / 2) + 150;
-                        window.scrollTo(0, middle);
-                    """, place_bet_button)
-                    # time.sleep(1)
-                    
-                    # Wait for button to be clickable
-                    WebDriverWait(self.driver, 10).until(
-                        EC.element_to_be_clickable(place_bet_button)
+                    success_element = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-bet-receipt__title"))
                     )
                     
-                    # Try JavaScript click if regular click fails
-                    try:
-                        self.driver.execute_script("arguments[0].click();", place_bet_button)
-                        logger.info("JavaScript clicked place bet button")
-                        # place_bet_button.click()
-                        # logger.info("Clicked place bet button")
-                    except Exception as click_error:
-                        logger.error(f"Regular click failed, trying JavaScript click: {click_error}")
-                        self.driver.execute_script("arguments[0].click();", place_bet_button)
-                        logger.info("JavaScript clicked place bet button")
-                    
-                    # time.sleep(3)
-                    
-                except Exception as scroll_click_error:
-                    logger.error(f"Failed to scroll and click bet button: {scroll_click_error}")
-                    
-                    # Last resort: try moving to element and clicking
-                    try:
-                        actions = ActionChains(self.driver)
-                        actions.move_to_element(place_bet_button).click().perform()
-                        logger.info("ActionChains clicked place bet button")
-                        # time.sleep(3)
-                    except Exception as action_error:
-                        logger.error(f"ActionChains also failed for bet button: {action_error}")
-                        raise Exception("All click methods failed for bet button")
-                
-                # Check for success confirmation
-                try:
-                    success_selectors = [
-                        # "//div[contains(@class, 'bet-success')]",
-                        # "//div[contains(@class, 'success-message')]",
-                        # "//div[contains(@class, 'success')]",
-                        # "//div[contains(text(), 'successful')]",
-                        "//div[contains(text(), 'Success')]"
-                    ]
-                    
-                    success_found = False
-                    for selector in success_selectors:
-                        try:
-                            WebDriverWait(self.driver, 5).until(
-                                EC.presence_of_element_located((By.XPATH, selector))
-                            )
-                            success_found = True
-                            break
-                        except TimeoutException:
-                            continue
-                    
-                    if success_found:
+                    success_text = success_element.text.strip()
+                    if "Bet Placed Successfully" in success_text:
                         logger.info("✅ Bet placed successfully!")
                         return True
                     else:
+                        logger.warning(f"⚠️ Unexpected success message: {success_text}")
+                        return False
+                        
+                except Exception as e:
+                    logger.error(f"No success confirmation found: {e}")
                         # Take screenshot of failed bet state
                         try:
                             timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1304,11 +1166,6 @@ class BetEngine(WebsiteOpener):
                             logger.info(f"Failed bet screenshot saved to {screenshot_path}")
                         except Exception as screenshot_error:
                             logger.error(f"Failed to take failed bet screenshot: {screenshot_error}")
-                        logger.warning("⚠️ No success confirmation found, bet may have failed")
-                        return False
-                
-                except Exception as e:
-                    logger.error(f"Error checking for success confirmation: {e}")
                     return False
                     
             except Exception as e:
@@ -1868,7 +1725,7 @@ class BetEngine(WebsiteOpener):
         Calculate the Expected Value (EV) for a bet
         
         Parameters:
-        - bet_odds: The decimal odds offered by Nairabet
+        - bet_odds: The decimal odds offered by MSport
         - shaped_data: The data from Pinnacle with prices
         
         Returns:
@@ -1889,8 +1746,14 @@ class BetEngine(WebsiteOpener):
         # Get the event ID to fetch latest odds from Pinnacle
         event_id = shaped_data.get("eventId")
         
+        # For Asian handicaps (spread), invert points for away team when fetching Pinnacle odds
+        pinnacle_points = points
+        if line_type == "spread" and outcome == "away" and points is not None:
+            pinnacle_points = -points
+            logger.info(f"Asian handicap away team: inverting points from {points} to {pinnacle_points} for Pinnacle odds")
+        
         # Fetch latest odds from Pinnacle API if event ID is available
-        latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, points, outcome, period_key)
+        latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, pinnacle_points, outcome, period_key)
         
         # If we couldn't get latest odds, return -100 EV instead of using fallback
         if not latest_prices:
@@ -1931,7 +1794,32 @@ class BetEngine(WebsiteOpener):
             
         # Calculate EV
         ev = calculate_ev(bet_odds, true_price)
+        # logger.info(f"Bet odds: {bet_odds}, outcome: {outcome_key}, True price: {true_price}, EV: {ev:.2f}%")
+        
+        # Format EV with emoji and market info
+        emoji = "✅" if ev > 0 else "❌"
+        line_type = line_type
+        outcome = outcome_key
+        points = points
+        is_first_half = is_first_half
+        
+        if line_type == "spread":
+            if abs(points) < 0.01:  # DNB
+                market_info = f"DNB {outcome}"
+            else:
+                market_info = f"handicap {points:+g} {outcome}"
+        elif line_type == "total":
+            market_info = f"{outcome} {points}"
+        elif line_type == "money_line":
+            market_info = f"1x2 {outcome}"
+        else:
+            market_info = f"{line_type} {outcome}"
+        
+        first_half_info = ", firsthalf: true" if is_first_half else ""
+        
+        formatted_ev = f"({emoji}{market_info}{first_half_info})"
         logger.info(f"Bet odds: {bet_odds}, outcome: {outcome_key}, True price: {true_price}, EV: {ev:.2f}%")
+        logger.info(f"{formatted_ev}")
         
         return ev
         
@@ -2246,6 +2134,27 @@ class BetEngine(WebsiteOpener):
             return f"{home_team}_{away_team}_{pinnacle_start_time}"
         return f"{home_team}_{away_team}"
     
+    def __map_asian_handicap_to_nairabet(self, points):
+        """
+        Map Pinnacle Asian Handicap values to Nairabet regular handicap format
+        
+        Asian handicaps with .5 are mapped to whole numbers by removing the decimal:
+        -2.5 → -2, -1.5 → -1, -0.5 → 0, +0.5 → +1, +1.5 → +2, etc.
+        
+        Parameters:
+        - points: Asian handicap value from Pinnacle
+        
+        Returns:
+        - Mapped handicap value for Nairabet
+        """
+        if points % 1 == 0.5:  # Has .5 decimal
+            if points > 0:
+                return int(points + 0.5)  # +0.5 → +1, +1.5 → +2, etc.
+            else:
+                return int(points + 0.5)  # -0.5 → 0, -1.5 → -1, -2.5 → -2, etc.
+        else:
+            return int(points)  # Whole numbers stay the same
+    
     def __check_all_markets_for_game(self, event_details, shaped_data):
         """
         Check all available markets for a game and return those that meet EV threshold
@@ -2265,7 +2174,7 @@ class BetEngine(WebsiteOpener):
             period_suffix = " (1st Half)" if is_first_half else ""
             
             # Check Moneyline markets
-            logger.info(f"Checking moneyline markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking moneyline markets{period_suffix} for {home_team} vs {away_team}\033[0m")
             for outcome in ["home", "away", "draw"]:
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
                     event_details, "money_line", None, outcome, is_first_half, sport_id, home_team, away_team
@@ -2289,7 +2198,7 @@ class BetEngine(WebsiteOpener):
         # Check Total markets (Over/Under)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Checking total markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking total markets{period_suffix} for {home_team} vs {away_team}\033[0m")
             
             for outcome in ["over", "under"]:
                 # Try common total points: 0.5, 1.5, 2.5, 3.5, 4.5, 5.5
@@ -2313,23 +2222,27 @@ class BetEngine(WebsiteOpener):
                             available_markets.append(("total", outcome, odds, actual_points, ev, is_first_half, stake))
                             # logger.info(f"Total{period_suffix} {outcome} {actual_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
-        # Check Asian Handicap markets
+        # Check Asian Handicap markets (with mapping to Nairabet regular handicap)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Checking handicap markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking handicap markets{period_suffix} for {home_team} vs {away_team}\033[0m")
             
             for outcome in ["home", "away"]:
                 # Try common handicap points: -2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5
-                for points in [-2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5]:
+                for points in [-2.5, -2.0, -1.5, -1.0, 0.5, 1.0, 1.5, 2.0, 2.5]:
+                    # Map Pinnacle Asian Handicap to Nairabet regular handicap
+                    nairabet_points = self.__map_asian_handicap_to_nairabet(points)
+                    
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
-                        event_details, "spread", points, outcome, is_first_half, sport_id, home_team, away_team
+                        event_details, "spread", nairabet_points, outcome, is_first_half, sport_id, home_team, away_team
                     )
                     if bet_code and odds:
                         # Create modified shaped data for this specific market
+                        # Use the original Pinnacle points for EV calculation
                         modified_shaped_data = shaped_data.copy()
                         modified_shaped_data["category"]["type"] = "spread"
                         modified_shaped_data["category"]["meta"]["team"] = outcome
-                        modified_shaped_data["category"]["meta"]["value"] = actual_points
+                        modified_shaped_data["category"]["meta"]["value"] = points  # Use original Pinnacle points for EV
                         if is_first_half:
                             modified_shaped_data["periodNumber"] = "1"
                         
@@ -2337,13 +2250,14 @@ class BetEngine(WebsiteOpener):
                         if ev > self.__min_ev:
                             # Calculate stake for this specific market
                             stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
-                            available_markets.append(("spread", outcome, odds, actual_points, ev, is_first_half, stake))
-                            # logger.info(f"Handicap{period_suffix} {outcome} {actual_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
+                            # Store the Nairabet points for actual betting, but use Pinnacle points for EV display
+                            available_markets.append(("spread", outcome, odds, nairabet_points, ev, is_first_half, stake))
+                            # logger.info(f"Handicap{period_suffix} {outcome} - Pinnacle {points} → Nairabet {nairabet_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         # Check DNB markets (when handicap is 0)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Checking DNB markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking DNB markets{period_suffix} for {home_team} vs {away_team}\033[0m")
             
             for outcome in ["home", "away"]:
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
@@ -2365,7 +2279,7 @@ class BetEngine(WebsiteOpener):
                         available_markets.append(("DNB", outcome, odds, 0.0, ev, is_first_half, stake))
                         # logger.info(f"DNB{period_suffix} {outcome}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
-        logger.info(f"Found {len(available_markets)} markets with positive EV for {home_team} vs {away_team}")
+        logger.info(f"\033[1m\033[1;36mFound {len(available_markets)} markets with positive EV for {home_team} vs {away_team}\033[0m")
         logger.info(f"{available_markets}")
         return available_markets
 
