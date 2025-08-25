@@ -1725,7 +1725,7 @@ class BetEngine(WebsiteOpener):
         Calculate the Expected Value (EV) for a bet
         
         Parameters:
-        - bet_odds: The decimal odds offered by MSport
+        - bet_odds: The decimal odds offered by Nairabet
         - shaped_data: The data from Pinnacle with prices
         
         Returns:
@@ -1746,14 +1746,8 @@ class BetEngine(WebsiteOpener):
         # Get the event ID to fetch latest odds from Pinnacle
         event_id = shaped_data.get("eventId")
         
-        # For Asian handicaps (spread), invert points for away team when fetching Pinnacle odds
-        pinnacle_points = points
-        if line_type == "spread" and outcome == "away" and points is not None:
-            pinnacle_points = -points
-            logger.info(f"Asian handicap away team: inverting points from {points} to {pinnacle_points} for Pinnacle odds")
-        
         # Fetch latest odds from Pinnacle API if event ID is available
-        latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, pinnacle_points, outcome, period_key)
+        latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, points, outcome, period_key)
         
         # If we couldn't get latest odds, return -100 EV instead of using fallback
         if not latest_prices:
@@ -1794,32 +1788,7 @@ class BetEngine(WebsiteOpener):
             
         # Calculate EV
         ev = calculate_ev(bet_odds, true_price)
-        # logger.info(f"Bet odds: {bet_odds}, outcome: {outcome_key}, True price: {true_price}, EV: {ev:.2f}%")
-        
-        # Format EV with emoji and market info
-        emoji = "✅" if ev > 0 else "❌"
-        line_type = line_type
-        outcome = outcome_key
-        points = points
-        is_first_half = is_first_half
-        
-        if line_type == "spread":
-            if abs(points) < 0.01:  # DNB
-                market_info = f"DNB {outcome}"
-            else:
-                market_info = f"handicap {points:+g} {outcome}"
-        elif line_type == "total":
-            market_info = f"{outcome} {points}"
-        elif line_type == "money_line":
-            market_info = f"1x2 {outcome}"
-        else:
-            market_info = f"{line_type} {outcome}"
-        
-        first_half_info = ", firsthalf: true" if is_first_half else ""
-        
-        formatted_ev = f"({emoji}{market_info}{first_half_info})"
         logger.info(f"Bet odds: {bet_odds}, outcome: {outcome_key}, True price: {true_price}, EV: {ev:.2f}%")
-        logger.info(f"{formatted_ev}")
         
         return ev
         
@@ -2174,7 +2143,7 @@ class BetEngine(WebsiteOpener):
             period_suffix = " (1st Half)" if is_first_half else ""
             
             # Check Moneyline markets
-            logger.info(f"\033[1m\033[1;36mChecking moneyline markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            logger.info(f"Checking moneyline markets{period_suffix} for {home_team} vs {away_team}")
             for outcome in ["home", "away", "draw"]:
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
                     event_details, "money_line", None, outcome, is_first_half, sport_id, home_team, away_team
@@ -2198,7 +2167,7 @@ class BetEngine(WebsiteOpener):
         # Check Total markets (Over/Under)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"\033[1m\033[1;36mChecking total markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            logger.info(f"Checking total markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["over", "under"]:
                 # Try common total points: 0.5, 1.5, 2.5, 3.5, 4.5, 5.5
@@ -2225,7 +2194,7 @@ class BetEngine(WebsiteOpener):
         # Check Asian Handicap markets (with mapping to Nairabet regular handicap)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"\033[1m\033[1;36mChecking handicap markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            logger.info(f"Checking handicap markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["home", "away"]:
                 # Try common handicap points: -2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5
@@ -2257,7 +2226,7 @@ class BetEngine(WebsiteOpener):
         # Check DNB markets (when handicap is 0)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"\033[1m\033[1;36mChecking DNB markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            logger.info(f"Checking DNB markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["home", "away"]:
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
@@ -2279,7 +2248,7 @@ class BetEngine(WebsiteOpener):
                         available_markets.append(("DNB", outcome, odds, 0.0, ev, is_first_half, stake))
                         # logger.info(f"DNB{period_suffix} {outcome}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
-        logger.info(f"\033[1m\033[1;36mFound {len(available_markets)} markets with positive EV for {home_team} vs {away_team}\033[0m")
+        logger.info(f"Found {len(available_markets)} markets with positive EV for {home_team} vs {away_team}")
         logger.info(f"{available_markets}")
         return available_markets
 
