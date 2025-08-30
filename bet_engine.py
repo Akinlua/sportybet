@@ -8,6 +8,7 @@ import dotenv
 import threading
 import queue
 import logging
+import asyncio
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
@@ -218,6 +219,10 @@ class BetEngine(WebsiteOpener):
         
         # Start bet worker thread for queued bet placement
         self.__start_bet_worker()
+        
+        # Initialize popup handler state
+        self.__popup_handler_running = False
+        self.__popup_handler_task = None
     
     def _initialize_browser_if_needed(self, account=None):
         """Initialize the browser if it hasn't been initialized yet
@@ -272,6 +277,9 @@ class BetEngine(WebsiteOpener):
             self._current_proxy = proxy  # Store current proxy for future comparison
             logger.info("Browser initialized")
             
+            # Start background popup handler
+            self.__start_popup_handler()
+            
             # Check IP address if using proxy
             if proxy:
                 proxy_dict = {'http': proxy, 'https': proxy}
@@ -282,6 +290,9 @@ class BetEngine(WebsiteOpener):
     def _cleanup_browser_for_proxy_switch(self):
         """Clean up the current browser instance to allow for proxy switching"""
         try:
+            # Stop background popup handler
+            self.__stop_popup_handler()
+            
             if hasattr(self, 'driver') and self.driver:
                 logger.info("Closing current browser for proxy switch...")
                 self.driver.quit()
@@ -298,6 +309,85 @@ class BetEngine(WebsiteOpener):
             self.__browser_initialized = False
             self.__browser_open = False
             self._current_proxy = None
+
+    async def __background_popup_handler(self):
+        """
+        Background async function that continuously checks for and handles popups
+        Runs every 2 seconds while browser is open
+        """
+        logger.info("🔄 Starting background popup handler...")
+        
+        while self.__popup_handler_running and self.__browser_open:
+            try:
+                if hasattr(self, 'driver') and self.driver:
+                    # Handle Accept/Cookie popups
+                    # try:
+                    #     accept_button = self.driver.find_element(By.XPATH, "//button[contains(text(),'Accept')]")
+                    #     accept_button.click()
+                    #     logger.info("🖱️ Clicked Accept button on popup")
+                    #     await asyncio.sleep(0.5)
+                    # except:
+                    #     pass
+                    
+                    # Handle Kumulos confirmation popups
+                    try:
+                        confirm_button = self.driver.find_element(By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel")
+                        confirm_button.click()
+                        logger.info("🖱️ Clicked Kumulos confirm button")
+                        await asyncio.sleep(0.5)
+                    except:
+                        try:
+                            cancel_button = self.driver.find_element(By.CSS_SELECTOR, ".kumulos-action-button-cancel")
+                            cancel_button.click()
+                            logger.info("🖱️ Clicked Kumulos cancel button")
+                            await asyncio.sleep(0.5)
+                        except:
+                            pass
+                    
+                    # # Remove background mask if present
+                    # try:
+                    #     self.driver.execute_script("""
+                    #         const mask = document.querySelector('.kumulos-background-mask');
+                    #         if (mask) mask.remove();
+                    #     """)
+                    #     logger.info("🧹 Removed Kumulos background mask")
+                    # except:
+                    #     pass
+                        
+            except Exception as e:
+                logger.debug(f"Error in background popup handler: {e}")
+            
+            # Wait 2 seconds before next check
+            await asyncio.sleep(2)
+        
+        logger.info("🛑 Background popup handler stopped")
+
+    def __start_popup_handler(self):
+        """Start the background popup handler in a separate thread"""
+        if not self.__popup_handler_running:
+            self.__popup_handler_running = True
+            
+            def run_popup_handler():
+                """Run the async popup handler in a new event loop"""
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(self.__background_popup_handler())
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    loop.close()
+            
+            # Start popup handler in a separate thread
+            self.__popup_handler_thread = threading.Thread(target=run_popup_handler, daemon=True)
+            self.__popup_handler_thread.start()
+            logger.info("🚀 Background popup handler started")
+
+    def __stop_popup_handler(self):
+        """Stop the background popup handler"""
+        if self.__popup_handler_running:
+            self.__popup_handler_running = False
+            logger.info("🛑 Background popup handler stopped")
         
     def __load_config(self, config_file):
         """Load configuration from JSON file"""
@@ -602,24 +692,24 @@ class BetEngine(WebsiteOpener):
                 logger.info("Opened login modal")
                 
                 # Handle notification popup that may appear after clicking login
-                try:
-                    # Wait for notification popup and click "Maybe Later"
-                    maybe_later_btn = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel"))
-                    )
-                    maybe_later_btn.click()
-                    logger.info("Clicked 'Maybe Later' on notification popup")
-                    time.sleep(1)  # Brief wait for popup to close
-                except TimeoutException:
-                    logger.info("No notification popup found, continuing with login")
-                except Exception as e:
-                    logger.warning(f"Could not handle notification popup: {e}")
+                # try:
+                #     # Wait for notification popup and click "Maybe Later"
+                #     maybe_later_btn = WebDriverWait(self.driver, 5).until(
+                #         EC.element_to_be_clickable((By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel"))
+                #     )
+                #     maybe_later_btn.click()
+                #     logger.info("Clicked 'Maybe Later' on notification popup")
+                #     time.sleep(1)  # Brief wait for popup to close
+                # except TimeoutException:
+                #     logger.info("No notification popup found, continuing with login")
+                # except Exception as e:
+                #     logger.warning(f"Could not handle notification popup: {e}")
                     
             except Exception as e:
                 logger.error(f"Could not open login modal: {e}")
             
             # Find username/phone/email input
-            phone_input = WebDriverWait(self.driver, 10).until(
+            phone_input = WebDriverWait(self.driver, 60).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.skeleton-container.overlay-skeleton input[name='login']"))
             )
             phone_input.clear()
@@ -627,7 +717,7 @@ class BetEngine(WebsiteOpener):
             logger.info(f"📱 Entered username/phone/email: {account.username}")
             
             # Find password input
-            password_input = WebDriverWait(self.driver, 10).until(
+            password_input = WebDriverWait(self.driver, 60).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.skeleton-container.overlay-skeleton input[name='password']"))
             )
             password_input.clear()
@@ -635,20 +725,20 @@ class BetEngine(WebsiteOpener):
             logger.info(f"🔑 Entered password")
             
             # Find and click login button inside the modal
-            login_button = WebDriverWait(self.driver, 10).until(
+            login_button = WebDriverWait(self.driver, 60).until(
                 EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'skeleton-container') and contains(@class,'overlay-skeleton')]//button[contains(@class,'form-button') and contains(@class,'form-button--primary')]"))
             )
             login_button.click()
             logger.info(f"🚀 Clicked login button")
             
             # Take screenshot for debugging
-            try:
-                timestamp = time.strftime("%Y%m%d-%H%M%S")
-                screenshot_path = f"login_status_{timestamp}.png"
-                self.driver.save_screenshot(screenshot_path)
-                # print(f"📸 Login status screenshot saved to {screenshot_path}")
-            except Exception as screenshot_error:
-                logger.error(f"Failed to take screenshot: {screenshot_error}")
+            # try:
+            #     timestamp = time.strftime("%Y%m%d-%H%M%S")
+            #     screenshot_path = f"login_status_{timestamp}.png"
+            #     self.driver.save_screenshot(screenshot_path)
+            #     # print(f"📸 Login status screenshot saved to {screenshot_path}")
+            # except Exception as screenshot_error:
+            #     logger.error(f"Failed to take screenshot: {screenshot_error}")
             
             # Verify login success by presence of header 'Account' button
             try:
@@ -945,31 +1035,17 @@ class BetEngine(WebsiteOpener):
     def __generate_nairabet_bet_url(self, event_details):
         """
         Generate Nairabet betting URL based on event details
-        Format: https://www.nairabet.com/ng/web/sports/Soccer/HomeTeam/AwayTeam/eventId
+        Format: https://www.nairabet.com/event/{eventId}
         """
         try:
-            # Handle both old and new response formats
-            home_team = event_details.get("homeTeam", "")
-            away_team = event_details.get("awayTeam", "")
-            event_id = event_details.get("eventId", "")
+            # Get event ID from event details
+            event_id = event_details.get("eventId") or event_details.get("event_id") or event_details.get("id")
             
-            # If not found in old format, try new format
-            if not home_team or not away_team:
-                event_names = event_details.get("eventNames", [])
-                if len(event_names) >= 2:
-                    home_team = event_names[0]
-                    away_team = event_names[1]
-                    event_id = event_details.get("id", event_id)
-            
-            if not home_team or not away_team or not event_id:
-                logger.error(f"Missing required fields for URL generation: home_team={home_team}, away_team={away_team}, event_id={event_id}")
+            if not event_id:
+                logger.error(f"Missing event_id for URL generation: {event_details}")
                 return None
             
-            # Replace spaces with underscores
-            home_team_formatted = home_team.replace(" ", "_")
-            away_team_formatted = away_team.replace(" ", "_")
-            
-            bet_url = f"{self.__bet_host}/ng/web/sports/Soccer/{home_team_formatted}/{away_team_formatted}/{event_id}"
+            bet_url = f"{self.__bet_host}/event/{event_id}"
             logger.info(f"Generated Nairabet bet URL: {bet_url}")
             
             return bet_url
@@ -977,6 +1053,18 @@ class BetEngine(WebsiteOpener):
         except Exception as e:
             logger.error(f"Error generating bet URL: {e}")
             return None
+
+    def __take_screenshot(self, reason: str) -> None:
+        """
+        Take a screenshot with timestamp and reason
+        """
+        try:
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            screenshot_path = f"{reason}_{timestamp}.png"
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Screenshot saved: {screenshot_path}")
+        except Exception as screenshot_error:
+            logger.error(f"Failed to take screenshot: {screenshot_error}")
 
     def __wait_for_market_content(self, timeout_seconds: int = 15) -> None:
         """
@@ -994,7 +1082,7 @@ class BetEngine(WebsiteOpener):
         
         # Wait for the active market group to be present
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".event-details__market-groups"))
         )
 
     def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None):
@@ -1029,14 +1117,16 @@ class BetEngine(WebsiteOpener):
             # Wait for the market content to render instead of using sleep
             try:
                 self.__wait_for_market_content(timeout_seconds=15)
+                logger.info("found market content")
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window: {e}")
-            
+            time.sleep(3)
             # Find and click the market/outcome
             market_element = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team)
             # logger.info(f"Market element: {market_element}")
             if not market_element:
                 logger.error("Could not find market element")
+                # time.sleep(100)
                 return False
             
             try:
@@ -1101,24 +1191,45 @@ class BetEngine(WebsiteOpener):
             
             # Enter stake amount using new Nairabet selectors
             try:
-                # Find the stake input using the new selector structure
-                stake_input = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-acca-bet__stake .betslip-stake .form-input__input"))
-                )
-                
-                # Clear existing value and enter new stake
-                    stake_input.clear()
-                stake_input.send_keys(str(stake))
-                logger.info(f"✅ Successfully entered stake: {stake}")
-                
+                # Fallback: Use JavaScript to find and set stake input
+                logger.info("Trying JavaScript fallback for stake input")
+                script = """
+                var stakeInput = document.querySelector('.betslip-acca-bet__stake .betslip-stake .form-input__input');
+                if (stakeInput) {
+                    stakeInput.value = '';
+                    stakeInput.value = arguments[0];
+                    stakeInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    stakeInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+                return false;
+                """
+                result = self.driver.execute_script(script, str(stake))
+                if result:
+                    logger.info(f"✅ Successfully entered stake via JavaScript: {stake}")
+                else:
+                    logger.error("JavaScript fallback failed - stake input not found")
+                    return False
             except Exception as e:
-                logger.error(f"Error entering stake: {e}")
-                return False
+                logger.error(f"Error entering stake with selector: {e}")
+                try:
+                    # Find the stake input using the new selector structure
+                    stake_input = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-acca-bet__stake .betslip-stake .form-input__input"))
+                    )
+                    
+                    # Clear existing value and enter new stake
+                    stake_input.clear()
+                    stake_input.send_keys(str(stake))
+                    logger.info(f"✅ Successfully entered stake: {stake}")
+                except Exception as js_error:
+                    logger.error(f"fallback also failed: {js_error}")
+                    return False
             
             # Place the bet using new Nairabet selectors
             try:
                 # Wait for the bet button to be clickable
-                    place_bet_button = WebDriverWait(self.driver, 10).until(
+                place_bet_button = WebDriverWait(self.driver, 10).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
                 )
                 
@@ -1130,21 +1241,72 @@ class BetEngine(WebsiteOpener):
                 place_bet_button.click()
                 logger.info("Clicked bet button")
                 
-                # If button says "Accept Odds...", we need to click again after waiting
+                # If button says "Accept Odds...", odds have changed - need to recalculate EV
                 if "accept odds" in button_text.lower():
-                    logger.info("Button requires odds acceptance, waiting and clicking again...")
-                    time.sleep(1)  # Wait a moment for button to update
+                    logger.warning("⚠️ Odds have changed! Recalculating EV with new Nairabet odds...")
                     
-                    # Wait for button to update and click again
-                    updated_button = WebDriverWait(self.driver, 10).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
-                    )
-                    updated_button.click()
-                    logger.info("Clicked updated bet button")
+                    try:
+                        # Get the shaped_data from the current bet context
+                        current_shaped_data = getattr(self, '_current_shaped_data', None)
+                        if not current_shaped_data:
+                            logger.error("No shaped_data available for EV recalculation")
+                            self.__take_screenshot("odds_change_no_shaped_data")
+                            return False
+                        
+                        # Get event details from Nairabet API to get exact odds
+                        event_details = self.__get_event_details(current_shaped_data)
+                        if not event_details:
+                            logger.error("Failed to get event details from Nairabet API")
+                            self.__take_screenshot("odds_change_no_event_details")
+                            return False
+                        
+                        # Extract bet parameters from shaped_data
+                        line_type = current_shaped_data["category"]["type"].lower()
+                        outcome = current_shaped_data["category"]["meta"]["team"]
+                        points = current_shaped_data["category"]["meta"].get("value")
+                        is_first_half = current_shaped_data.get("periodNumber") == "1"
+                        home_team = current_shaped_data["game"]["home"]
+                        away_team = current_shaped_data["game"]["away"]
+                        
+                        # Get the exact market and odds from Nairabet API using the same method as initial bet
+                        bet_code, new_odds, _ = self.__find_market_bet_code_with_points(
+                            event_details, line_type, outcome, points, is_first_half, home_team, away_team
+                        )
+                        
+                        if not new_odds:
+                            logger.error("Could not get new odds from Nairabet API")
+                            self.__take_screenshot("odds_change_no_odds_from_api")
+                            return False
+                        
+                        logger.info(f"New odds from Nairabet API: {new_odds}")
+                        
+                        # Recalculate EV with new odds
+                        new_ev = self.__calculate_ev(new_odds, current_shaped_data)
+                        logger.info(f"📊 Recalculated EV with new odds {new_odds}: {new_ev:.2f}%")
+                        
+                        if new_ev > 0:
+                            logger.info("✅ EV still positive, accepting odds change...")
+                            time.sleep(1)  # Wait a moment for button to update
+                            
+                            # Click accept odds button
+                            updated_button = WebDriverWait(self.driver, 10).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
+                            )
+                            updated_button.click()
+                            logger.info("Clicked accept odds button")
+                        else:
+                            logger.warning(f"❌ EV turned negative ({new_ev:.2f}%), aborting bet...")
+                            self.__take_screenshot("odds_change_negative_ev")
+                            return False  # Abort this bet
+                            
+                    except Exception as odds_check_error:
+                        logger.error(f"Error checking odds change: {odds_check_error}")
+                        self.__take_screenshot("odds_change_error")
+                        return False  # Any error = abort bet
                 
                 # Wait for success confirmation
                 try:
-                    success_element = WebDriverWait(self.driver, 10).until(
+                    success_element = WebDriverWait(self.driver, 20).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-bet-receipt__title"))
                     )
                     
@@ -1158,14 +1320,14 @@ class BetEngine(WebsiteOpener):
                         
                 except Exception as e:
                     logger.error(f"No success confirmation found: {e}")
-                        # Take screenshot of failed bet state
-                        try:
-                            timestamp = time.strftime("%Y%m%d-%H%M%S")
-                            screenshot_path = f"failed_bet_screenshot_{timestamp}.png"
-                            self.driver.save_screenshot(screenshot_path)
-                            logger.info(f"Failed bet screenshot saved to {screenshot_path}")
-                        except Exception as screenshot_error:
-                            logger.error(f"Failed to take failed bet screenshot: {screenshot_error}")
+                    # Take screenshot of failed bet state
+                    try:
+                        timestamp = time.strftime("%Y%m%d-%H%M%S")
+                        screenshot_path = f"failed_bet_screenshot_{timestamp}.png"
+                        self.driver.save_screenshot(screenshot_path)
+                        logger.info(f"Failed bet screenshot saved to {screenshot_path}")
+                    except Exception as screenshot_error:
+                        logger.error(f"Failed to take failed bet screenshot: {screenshot_error}")
                     return False
                     
             except Exception as e:
@@ -1244,7 +1406,7 @@ class BetEngine(WebsiteOpener):
                 logger.info(f"Market search screenshot saved to {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to take market search screenshot: {screenshot_error}")
-            market_rows = self.driver.find_elements(By.CSS_SELECTOR, ".m-market-row.m-market-row--3")
+            market_rows = self.driver.find_elements(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
             if not market_rows:
                 logger.warning("No market rows found")
                 return None
@@ -1264,16 +1426,15 @@ class BetEngine(WebsiteOpener):
         
         # Asian Handicap
         elif market_type_lower == "spread":
-            if not points:
+            if points is None:
                 return None
-            
             # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
             if abs(float(points)) < 0.01:  # Using small threshold for floating point comparison
                 logger.warning(f"Handicap is 0, looking for DNB (Draw No Bet) market instead of Asian Handicap")
                 # For DNB, use team names from shaped_data (passed as parameters)
                 return self.__find_dnb_outcome(outcome_lower, is_first_half, home_team, away_team)
             
-            return self.__find_handicap_outcome(points, outcome_lower)
+            return self.__find_handicap_outcome(points, outcome_lower, home_team, away_team)
         
         return None
     
@@ -1296,8 +1457,9 @@ class BetEngine(WebsiteOpener):
             event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
             if not event_markets:
                 logger.warning("No event-market divs found for 1X2")
-            return None
+                return None
             
+            logger.info("finding 1x2")
             # First event-market div is for 1X2
             market_div = event_markets[0]
             
@@ -1397,12 +1559,12 @@ class BetEngine(WebsiteOpener):
                             title_text = title_element.text.strip()
                             
                             # Extract points value from title (e.g., "Over 7.5", "Under 2.5")
-                    import re
+                            import re
                             match = re.search(r'(\d+\.?\d*)', title_text)
-                    if match:
+                            if match:
                                 cell_points = float(match.group(1))
                         
-                        # Check if this matches our target points
+                                # Check if this matches our target points
                                 if abs(cell_points - float(target_points)) < 0.01:
                                     # Check if this cell matches our outcome
                                     if (outcome == "over" and "over" in title_text.lower()) or \
@@ -1420,15 +1582,15 @@ class BetEngine(WebsiteOpener):
                     # Get the button inside this cell
                     button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
                             
-                            # Verify odds
-                            try:
+                    # Verify odds
+                    try:
                         odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                                odds_text = odds_element.text.strip()
-                                logger.info(f"Found total {outcome} {target_points} with odds: {odds_text}")
+                        odds_text = odds_element.text.strip()
+                        logger.info(f"Found total {outcome} {target_points} with odds: {odds_text}")
                         return button
-                            except Exception as e:
-                                logger.error(f"Could not find odds in total outcome: {e}")
-                                continue
+                    except Exception as e:
+                        logger.error(f"Could not find odds in total outcome: {e}")
+                        continue
                                 
                 except Exception as e:
                     # Row doesn't match, continue to next
@@ -1441,7 +1603,7 @@ class BetEngine(WebsiteOpener):
             logger.error(f"Error finding total outcome: {e}")
             return None
     
-    def __find_handicap_outcome(self, target_points, outcome):
+    def __find_handicap_outcome(self, target_points, outcome, home_team, away_team):
         """
         Find the Asian handicap outcome element for Nairabet
         
@@ -1465,7 +1627,7 @@ class BetEngine(WebsiteOpener):
                     header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
                     header_text = header.text.strip().lower()
                     
-                    if "handicap" in header_text or "ah" in header_text:
+                    if "handicap" in header_text:
                         # Found handicap market, now look for the specific points
                         rows = market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
                         
@@ -1474,31 +1636,66 @@ class BetEngine(WebsiteOpener):
                                 cells = row.find_elements(By.CSS_SELECTOR, ".event-market__cell")
                                 
                                 if len(cells) < 2:
-                        continue
+                                    continue
                     
                                 # Check if this row has the target points
                                 # The points might be in the row structure or we need to find the right row
-                                # For now, we'll use the first row that has 2 cells (this might need adjustment)
+                                # Check each cell to find the one with the correct team and points
+                                target_cell = None
                                 
-                                # First cell is home, second is away
-                                target_cell = cells[0] if outcome == "home" else cells[1]
+                                for i, cell in enumerate(cells):
+                                    try:
+                                        # Get the cell text to check team name and points
+                                        cell_text = cell.text.strip()
+                                        # logger.info(f"Checking cell {i}: '{cell_text}'")
+                                        
+                                        # Check if this cell contains the target team name and points
+                                        if outcome == "home" and home_team in cell_text and "Draw" not in cell_text:
+                                            # Look for points after the team name (e.g., "NAC Breda -2")
+                                            target_points_str = str(target_points)
+                                            if target_points > 0 and not target_points_str.startswith('+'):
+                                                # For positive points, ensure we look for the "+" sign
+                                                target_points_str = f"+{target_points}"
+                                            
+                                            if target_points_str in cell_text:
+                                                target_cell = cell
+                                                logger.info(f"Found home team cell with correct points: {target_points_str} - {cell_text}")
+                                                break
+                                        elif outcome == "away" and away_team in cell_text and "Draw" not in cell_text:
+                                            # Look for points after the team name (e.g., "AZ Alkmaar +2")
+                                            target_points_str = str(target_points)
+                                            if target_points > 0 and not target_points_str.startswith('+'):
+                                                # For positive points, ensure we look for the "+" sign
+                                                target_points_str = f"+{target_points}"
+                                            
+                                            if target_points_str in cell_text:
+                                                target_cell = cell
+                                                logger.info(f"Found away team cell with correct points: {target_points_str} - {cell_text}")
+                                                break
+                                    except Exception as e:
+                                        logger.debug(f"Error checking cell {i}: {e}")
+                                        continue
                                 
-                                # Get the button inside this cell
-                                button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-                                
-                                # Verify odds
-                                try:
-                                    odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                                    odds_text = odds_element.text.strip()
-                                    logger.info(f"Found handicap {outcome} {target_points} with odds: {odds_text}")
-                                    return button
-                                except Exception as e:
-                                    logger.error(f"Could not find odds in handicap outcome: {e}")
+                                if target_cell:
+                                    # Get the button inside this cell
+                                    button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
+                                    
+                                    # Verify odds
+                                    try:
+                                        odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
+                                        odds_text = odds_element.text.strip()
+                                        logger.info(f"Found handicap {outcome} {target_points} with odds: {odds_text}")
+                                        return button
+                                    except Exception as e:
+                                        logger.error(f"Could not find odds in handicap outcome: {e}")
+                                        continue
+                                else:
+                                    logger.debug(f"No cell found for {outcome} team with points {target_points}")
                                     continue
                                     
-                    except Exception as e:
+                            except Exception as e:
                                 # Row doesn't match, continue to next
-                        continue
+                                continue
                         
                         # If we found the handicap market but no matching row, break
                         break
@@ -1528,6 +1725,7 @@ class BetEngine(WebsiteOpener):
         - Element or None if not found
         """
         try:
+            logger.info(f"Finding DNB outcome for {outcome}, {is_first_half}, {home_team}, {away_team}")
             # Get the active market group div
             market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
             
@@ -1544,7 +1742,7 @@ class BetEngine(WebsiteOpener):
                     if "Draw No Bet" in header_text:
                         dnb_market_div = market_div
                         logger.info(f"Found DNB market: {header_text}")
-                                break
+                        break
                         
                 except Exception as e:
                     # This market doesn't have the expected structure, continue to next
@@ -1597,7 +1795,7 @@ class BetEngine(WebsiteOpener):
                             target_cell = cell
                             logger.info(f"Found DNB away team: {team_name}")
                             break
-            else:
+                    else:
                         # Fallback: use first non-empty cell for home, second for away
                         if outcome == "home" and target_cell is None:
                             target_cell = cell
@@ -1610,15 +1808,16 @@ class BetEngine(WebsiteOpener):
                         if target_cell is not None:
                             break
                 
-            except Exception as e:
+                except Exception as e:
                     # Cell doesn't have expected structure, continue to next
-                        continue
+                    continue
                     
             if not target_cell:
                 logger.warning(f"Could not find target cell for DNB {outcome}")
-            return None
+                return None
             
             # Get the button inside this cell
+            try:
                 button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
                 
                 # Verify odds
@@ -1629,7 +1828,10 @@ class BetEngine(WebsiteOpener):
                     return button
                 except Exception as e:
                     logger.error(f"Could not find odds in DNB outcome: {e}")
-            return None
+                    return None
+            except Exception as e:
+                logger.error(f"Error finding DNB outcome: {e}")
+                return None
             
         except Exception as e:
             logger.error(f"Error finding DNB outcome: {e}")
@@ -1684,6 +1886,10 @@ class BetEngine(WebsiteOpener):
                     
                     # Try to place bet with this account
                     account.increment_bets()
+                    
+                    # Store shaped_data for EV recalculation if odds change
+                    self._current_shaped_data = bet_data["shaped_data"]
+                    
                     success = self.__place_bet_with_selenium(
                         account,
                         self.__generate_nairabet_bet_url(bet_data["event_details"]),
@@ -1725,7 +1931,7 @@ class BetEngine(WebsiteOpener):
         Calculate the Expected Value (EV) for a bet
         
         Parameters:
-        - bet_odds: The decimal odds offered by Nairabet
+        - bet_odds: The decimal odds offered by MSport
         - shaped_data: The data from Pinnacle with prices
         
         Returns:
@@ -1746,8 +1952,14 @@ class BetEngine(WebsiteOpener):
         # Get the event ID to fetch latest odds from Pinnacle
         event_id = shaped_data.get("eventId")
         
+        # For Asian handicaps (spread), invert points for away team when fetching Pinnacle odds
+        pinnacle_points = points
+        if line_type == "spread" and outcome == "away" and points is not None:
+            pinnacle_points = -points
+            logger.info(f"Asian handicap away team: inverting points from {points} to {pinnacle_points} for Pinnacle odds")
+        
         # Fetch latest odds from Pinnacle API if event ID is available
-        latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, points, outcome, period_key)
+        latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, pinnacle_points, outcome, period_key)
         
         # If we couldn't get latest odds, return -100 EV instead of using fallback
         if not latest_prices:
@@ -1788,7 +2000,32 @@ class BetEngine(WebsiteOpener):
             
         # Calculate EV
         ev = calculate_ev(bet_odds, true_price)
+        # logger.info(f"Bet odds: {bet_odds}, outcome: {outcome_key}, True price: {true_price}, EV: {ev:.2f}%")
+        
+        # Format EV with emoji and market info
+        emoji = "✅" if ev > 0 else "❌"
+        line_type = line_type
+        outcome = outcome_key
+        points = points
+        is_first_half = is_first_half
+        
+        if line_type == "spread":
+            if abs(points) < 0.01:  # DNB
+                market_info = f"DNB {outcome}"
+            else:
+                market_info = f"handicap {points:+g} {outcome}"
+        elif line_type == "total":
+            market_info = f"{outcome} {points}"
+        elif line_type == "money_line":
+            market_info = f"1x2 {outcome}"
+        else:
+            market_info = f"{line_type} {outcome}"
+        
+        first_half_info = ", firsthalf: true" if is_first_half else ""
+        
+        formatted_ev = f"({emoji}{market_info}{first_half_info})"
         logger.info(f"Bet odds: {bet_odds}, outcome: {outcome_key}, True price: {true_price}, EV: {ev:.2f}%")
+        logger.info(f"{formatted_ev}")
         
         return ev
         
@@ -2143,7 +2380,8 @@ class BetEngine(WebsiteOpener):
             period_suffix = " (1st Half)" if is_first_half else ""
             
             # Check Moneyline markets
-            logger.info(f"Checking moneyline markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking moneyline markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            # logger.info(f"Checking moneyline markets{period_suffix} for {home_team} vs {away_team}")
             for outcome in ["home", "away", "draw"]:
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
                     event_details, "money_line", None, outcome, is_first_half, sport_id, home_team, away_team
@@ -2167,7 +2405,8 @@ class BetEngine(WebsiteOpener):
         # Check Total markets (Over/Under)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Checking total markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking total markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            # logger.info(f"Checking total markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["over", "under"]:
                 # Try common total points: 0.5, 1.5, 2.5, 3.5, 4.5, 5.5
@@ -2194,7 +2433,8 @@ class BetEngine(WebsiteOpener):
         # Check Asian Handicap markets (with mapping to Nairabet regular handicap)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Checking handicap markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking handicap markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            # logger.info(f"Checking handicap markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["home", "away"]:
                 # Try common handicap points: -2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5
@@ -2226,7 +2466,8 @@ class BetEngine(WebsiteOpener):
         # Check DNB markets (when handicap is 0)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Checking DNB markets{period_suffix} for {home_team} vs {away_team}")
+            logger.info(f"\033[1m\033[1;36mChecking DNB markets{period_suffix} for {home_team} vs {away_team}\033[0m")
+            # logger.info(f"Checking DNB markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["home", "away"]:
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
@@ -2382,10 +2623,10 @@ class BetEngine(WebsiteOpener):
             # Use appropriate markets based on is_first_half parameter
             if is_first_half:
                 markets = first_half_markets
-                logger.info(f"Using first half markets: {len(first_half_markets)} markets found")
+                # logger.info(f"Using first half markets: {len(first_half_markets)} markets found")
             else:
                 markets = all_markets
-                logger.info(f"Using full match markets: {len(all_markets)} markets found")
+                # logger.info(f"Using full match markets: {len(all_markets)} markets found")
                 
         elif "markets" in event_details:
             # Old API structure
@@ -2682,6 +2923,9 @@ class BetEngine(WebsiteOpener):
 
     def cleanup(self):
         """Close browser and clean up resources"""
+        # Stop background popup handler
+        self.__stop_popup_handler()
+        
         if self.__browser_open and self.__browser_initialized:
             try:
                 logger.info("Closing browser...")

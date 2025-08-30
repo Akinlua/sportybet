@@ -9,11 +9,19 @@ import logging
 from datetime import datetime, timedelta
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# )
+# logger = logging.getLogger("test_single_bet")
+
+logger = logging.getLogger('nairabet_betting')
+logger.setLevel(logging.INFO)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
 
 def create_quick_alert(home_team, away_team, line_type, outcome, points=None, is_first_half=False):
     """
@@ -29,8 +37,8 @@ def create_quick_alert(home_team, away_team, line_type, outcome, points=None, is
         "sportId": 1,  # Soccer
         "type": "prematch",
         "periodNumber": "1" if is_first_half else "0",
-        "eventId": 12345678,
-        "starts": start_time
+        "eventId": 15465549,
+        "starts": 1756651500000
     }
     
     if points is not None:
@@ -57,7 +65,8 @@ def shape_alert_data(alert):
         "periodNumber": alert["periodNumber"],
         "eventId": alert["eventId"],
         "starts": alert["starts"],
-        "sportId": alert["sportId"]
+        "sportId": alert["sportId"],
+        "stake": 50
     }
 
 def test_quick_scenarios():
@@ -65,34 +74,34 @@ def test_quick_scenarios():
     scenarios = {
         "1": {
             "name": "Moneyline Home Win",
-            "alert": create_quick_alert("Manchester City", "Liverpool", "moneyline", "home")
+            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "moneyline", "home")
         },
         "2": {
-            "name": "Over 2.5 Goals",
-            "alert": create_quick_alert("Arsenal", "Chelsea", "total", "over", points=2.5)
+            "name": "Over 3.5 Goals",
+            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "total", "over", points=3.5)
         },
         "3": {
-            "name": "Handicap +1.5",
-            "alert": create_quick_alert("Brighton", "Tottenham", "spread", "away", points=1.5)
+            "name": "Handicap +2",
+            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "spread", "home", points=2)
         },
         "4": {
             "name": "First Half Under 1.5",
-            "alert": create_quick_alert("Leeds United", "Leicester City", "total", "under", points=1.5, is_first_half=True)
+            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "total", "under", points=1.5, is_first_half=True)
         },
         "5": {
             "name": "DNB (Zero Handicap)",
-            "alert": create_quick_alert("Everton", "Wolves", "spread", "home", points=0.0)
+            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "spread", "home", points=0.0)
         },
         "6": {
             "name": "Asian Handicap -2.5 (maps to -2)",
-            "alert": create_quick_alert("Manchester City", "Sheffield Wednesday", "spread", "home", points=-2.5)
+            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "spread", "home", points=-2.5)
         }
     }
     
     return scenarios
 
 def run_single_test(bet_engine, alert_data, scenario_name):
-    """Run a single bet test"""
+    """Run a single bet test - directly place bet without odds checking"""
     logger.info(f"\n🎯 Testing: {scenario_name}")
     logger.info(f"Match: {alert_data['home']} vs {alert_data['away']}")
     logger.info(f"Bet: {alert_data['lineType']} - {alert_data['outcome']}")
@@ -102,11 +111,56 @@ def run_single_test(bet_engine, alert_data, scenario_name):
         logger.info("Period: First Half")
     
     try:
-        # Shape and send alert
+        # Shape data for bet engine
         shaped_data = shape_alert_data(alert_data)
-        bet_engine.notify(shaped_data)
-        logger.info("✅ Test completed successfully")
-        return True
+        
+        # Create mock event details (since we're bypassing Pinnacle lookup)
+        event_details = {
+            "home": alert_data['home'],
+            "away": alert_data['away'],
+            "event_id": alert_data.get('eventId', 15446589),
+            "starts": alert_data.get('starts', 1756321200000),
+            "sport_id": alert_data.get('sportId', 1)
+        }
+        
+        # Mock odds (you can adjust these test values)
+        test_odds = 1.69  # Default test odds
+        
+        # Extract bet parameters
+        line_type = alert_data['lineType']
+        outcome = alert_data['outcome']
+        is_first_half = alert_data.get('periodNumber') == "1"
+        
+        # Map line types to expected format
+        if line_type == "moneyline":
+            mapped_line_type = "money_line"
+        elif line_type == "total":
+            mapped_line_type = "total"
+        elif line_type == "spread":
+            mapped_line_type = "spread"
+        else:
+            mapped_line_type = line_type
+        
+        logger.info(f"🎯 Placing bet directly: {mapped_line_type} - {outcome} @ {test_odds}")
+        
+        # Call __place_bet directly (bypassing Pinnacle odds check)
+        result = bet_engine._BetEngine__place_bet(
+            event_details=event_details,
+            line_type=mapped_line_type,
+            outcome=outcome,
+            odds=test_odds,
+            modified_shaped_data=shaped_data,
+            is_first_half=is_first_half,
+            stake=50  # Let bet engine calculate stake
+        )
+        
+        if result:
+            logger.info("✅ Test completed successfully")
+        else:
+            logger.error("❌ Bet placement failed")
+        
+        return result
+        
     except Exception as e:
         logger.error(f"❌ Test failed: {e}")
         import traceback
@@ -124,7 +178,7 @@ def main():
         with open('config.json', 'r') as f:
             config = json.load(f)
         
-        bet_engine = BetEngine(config)
+        bet_engine = BetEngine(config, skip_initial_login=True)
         logger.info("✅ BetEngine initialized")
         
         # Show available scenarios
