@@ -71,14 +71,6 @@ class WebsiteOpener:
         options.add_argument("--memory-pressure-off")
         options.add_argument("--max_old_space_size=4096")
         
-        # Suppress security warnings
-        options.add_argument("--ignore-certificate-errors")
-        options.add_argument("--ignore-ssl-errors")
-        options.add_argument("--ignore-certificate-errors-spki-list")
-        options.add_argument("--allow-running-insecure-content")
-        options.add_argument("--disable-web-security")
-        options.add_argument("--allow-insecure-localhost")
-        
         # Add user agent
         options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
         
