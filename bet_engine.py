@@ -858,8 +858,18 @@ class BetEngine(WebsiteOpener):
                     "x-sah-device": "5f40d3154db72f213ffd1fe7f7ad1cb8"
                 }
                 
+                # Get proxy if available
+                proxies = None
+                if self.__config.get("use_proxies", False) and self.__accounts:
+                    # Use the first available account's proxy
+                    for acc in self.__accounts:
+                        if acc.proxy:
+                            proxies = acc.get_proxies()
+                            logger.info(f"Using proxy for search: {acc.proxy}")
+                            break
+                
                 # logger.info(f"Searching with URL: {search_url} and params: {params}")
-                response = requests.get(search_url, params=params, headers=headers)
+                response = requests.get(search_url, params=params, headers=headers, proxies=proxies)
                 
                 # logger.info(f"Response status: {response.status_code}")
                 # print(f"Response content: {response.text[:500]}...")
@@ -1011,7 +1021,17 @@ class BetEngine(WebsiteOpener):
                 "x-sah-device": "5f40d3154db72f213ffd1fe7f7ad1cb8"
             }
             
-            response = requests.get(details_url, params=params, headers=headers, timeout=10)
+            # Get proxy if available
+            proxies = None
+            if self.__config.get("use_proxies", False) and self.__accounts:
+                # Use the first available account's proxy
+                for acc in self.__accounts:
+                    if acc.proxy:
+                        proxies = acc.get_proxies()
+                        logger.info(f"Using proxy for event details: {acc.proxy}")
+                        break
+            
+            response = requests.get(details_url, params=params, headers=headers, proxies=proxies, timeout=10)
             response.raise_for_status()
             
             event_details = response.json()
