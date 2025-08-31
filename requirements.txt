@@ -9,3 +9,4 @@ nest_asyncio
 psutil
 blinker==1.7.0
 selenium-wire
+setuptools
