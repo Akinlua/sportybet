@@ -6,11 +6,11 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": null
+            "proxy": "http://brd-customer-hl_3fa1037b-zone-datacenter_proxy1-country-ng:be0682squyj3@brd.superproxy.io:33335"
         }
     ],
     "max_total_concurrent_bets": 20,
-    "use_proxies": false,
+    "use_proxies": true,
     "immediate_bet_placement": true,
     "browser": {
         "use_existing": true,
