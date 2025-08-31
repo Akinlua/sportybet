@@ -171,6 +171,10 @@ class BetEngine(WebsiteOpener):
         """
         super().__init__(headless)
 
+        # Initialize popup handler state first (before any cleanup calls)
+        self.__popup_handler_running = False
+        self.__popup_handler_task = None
+
         # bet_logger.info(f"Initializing BetEngine with min_ev: {min_ev}")
         # Only initialize browser if needed for certain operations
         
@@ -219,10 +223,6 @@ class BetEngine(WebsiteOpener):
         
         # Start bet worker thread for queued bet placement
         self.__start_bet_worker()
-        
-        # Initialize popup handler state
-        self.__popup_handler_running = False
-        self.__popup_handler_task = None
     
     def _initialize_browser_if_needed(self, account=None):
         """Initialize the browser if it hasn't been initialized yet
@@ -632,8 +632,11 @@ class BetEngine(WebsiteOpener):
             return 0
 
     def __do_login_for_account(self, account, _retry=False):
-        """Log in to Nairabet website with a specific account using selenium"""
-        logger.info(f"Logging in to Nairabet with account: {account.username}")
+        """Log in to Nairabet website with a specific account using selenium with retry mechanism"""
+        max_retries = 2
+        current_attempt = 2 if _retry else 1
+        
+        logger.info(f"🔄 Login attempt {current_attempt}/{max_retries} for account: {account.username}")
         
         if not account.username or not account.password:
             raise ValueError("Nairabet username or password not found for account")
@@ -775,17 +778,26 @@ class BetEngine(WebsiteOpener):
                 logger.info(f"Login error screenshot saved to {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to take error screenshot: {screenshot_error}")
-            logger.error(f"❌ Login failed for account: {account.username}: {e}")
-            # Minimal recovery for Selenium tab crashes
+            
+            logger.error(f"❌ Login attempt {current_attempt} failed for account: {account.username}: {e}")
+            
+            # Retry logic for any login failure
+            if current_attempt < max_retries:
+                logger.info(f"🔄 Retrying login for account: {account.username} (attempt {current_attempt + 1}/{max_retries})")
+                time.sleep(2)  # Brief wait before retry
+                return self.__do_login_for_account(account, _retry=True)
+            
+            # If we've exhausted all retries, handle final failure
+            logger.error(f"❌ All login attempts failed for account: {account.username}")
+            
+            # Minimal recovery for Selenium tab crashes (only on first attempt)
             msg = str(e).lower()
             if ("tab crashed" in msg or "chrome not reachable" in msg or "disconnected" in msg) and not _retry:
                 logger.error("Detected browser/tab crash during login. Restarting browser and retrying once...")
                 self.__restart_browser(account)
                 return self.__do_login_for_account(account, _retry=True)
             
-            logger.error(f"❌ Login failed for account: {account.username}: {e}")
-
-            time.sleep(1000)
+            # Final failure - don't sleep for 1000 seconds, just raise the exception
             raise
 
     def __search_event(self, home_team, away_team, pinnacle_start_time=None):
