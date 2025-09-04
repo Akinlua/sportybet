@@ -230,8 +230,9 @@ class BetEngine(WebsiteOpener):
         Parameters:
         - account: Specific BetAccount to use for proxy configuration. If None, uses first available proxy.
         """
-        # Check if we need to reinitialize browser for a different proxy
+        # Check if we need to reinitialize browser for a different proxy or account
         current_proxy = getattr(self, '_current_proxy', None)
+        current_account = getattr(self, '_current_account', None)
         target_proxy = None
         
         if self.__config.get("use_proxies", False):
@@ -244,14 +245,16 @@ class BetEngine(WebsiteOpener):
                         target_proxy = acc.proxy
                         break
         
-        # If browser is initialized but we need a different proxy, clean up first
+        # If browser is initialized but we need a different proxy or account, clean up first
         logger.info(f"self.__browser_initialized: {self.__browser_initialized}")
         logger.info(f"current_proxy: {current_proxy} target_proxy: {target_proxy}")
+        logger.info(f"current_account: {current_account} target_account: {account.username if account else None}")
+        
+        # Restart browser if switching to a different account or proxy
         if (self.__browser_initialized and 
-            current_proxy != target_proxy and 
-            self.__config.get("use_proxies", False)):
-            # logger.info(f"Proxy change detected: {current_proxy} -> {target_proxy}")
-            # logger.info("Cleaning up browser to switch proxy...")
+            (current_proxy != target_proxy or current_account != account) and 
+            account is not None):
+            logger.info(f"Account or proxy change detected. Restarting browser for account: {account.username}")
             self._cleanup_browser_for_proxy_switch()
         
         if not self.__browser_initialized:
@@ -275,6 +278,7 @@ class BetEngine(WebsiteOpener):
             self.__browser_initialized = True
             self.__browser_open = True
             self._current_proxy = proxy  # Store current proxy for future comparison
+            self._current_account = account  # Store current account for future comparison
             logger.info("Browser initialized")
             
             # Start background popup handler
@@ -301,6 +305,7 @@ class BetEngine(WebsiteOpener):
             self.__browser_initialized = False
             self.__browser_open = False
             self._current_proxy = None
+            self._current_account = None
             logger.info("Browser cleanup completed")
             
         except Exception as e:
@@ -309,6 +314,7 @@ class BetEngine(WebsiteOpener):
             self.__browser_initialized = False
             self.__browser_open = False
             self._current_proxy = None
+            self._current_account = None
 
     async def __background_popup_handler(self):
         """
@@ -2429,6 +2435,11 @@ class BetEngine(WebsiteOpener):
                     
                     ev = self.__calculate_ev(odds, modified_shaped_data)
                     if ev > self.__min_ev:
+                        # Check if Nairabet odds exceed maximum allowed
+                        if odds > self.__max_pinnacle_odds:
+                            logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                            continue
+                        
                         # Calculate stake for this specific market
                         stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                         available_markets.append(("money_line", outcome, odds, None, ev, is_first_half, stake))
@@ -2457,6 +2468,11 @@ class BetEngine(WebsiteOpener):
                         
                         ev = self.__calculate_ev(odds, modified_shaped_data)
                         if ev > self.__min_ev:
+                            # Check if Nairabet odds exceed maximum allowed
+                            if odds > self.__max_pinnacle_odds:
+                                logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                                continue
+                            
                             # Calculate stake for this specific market
                             stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                             available_markets.append(("total", outcome, odds, actual_points, ev, is_first_half, stake))
@@ -2489,6 +2505,11 @@ class BetEngine(WebsiteOpener):
                         
                         ev = self.__calculate_ev(odds, modified_shaped_data)
                         if ev > self.__min_ev:
+                            # Check if Nairabet odds exceed maximum allowed
+                            if odds > self.__max_pinnacle_odds:
+                                logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                                continue
+                            
                             # Calculate stake for this specific market
                             stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                             # Store the Nairabet points for actual betting, but use Pinnacle points for EV display
@@ -2516,6 +2537,11 @@ class BetEngine(WebsiteOpener):
                     
                     ev = self.__calculate_ev(odds, modified_shaped_data)
                     if ev > self.__min_ev:
+                        # Check if Nairabet odds exceed maximum allowed
+                        if odds > self.__max_pinnacle_odds:
+                            logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                            continue
+                        
                         # Calculate stake for this specific market
                         stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                         available_markets.append(("DNB", outcome, odds, 0.0, ev, is_first_half, stake))
