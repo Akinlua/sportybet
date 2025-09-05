@@ -2489,7 +2489,7 @@ class BetEngine(WebsiteOpener):
                 for points in [-2.5, -2.0, -1.5, -1.0, 0.5, 1.0, 1.5, 2.0, 2.5]:
                     # Map Pinnacle Asian Handicap to Nairabet regular handicap
                     nairabet_points = self.__map_asian_handicap_to_nairabet(points)
-                    
+                    logger.info(f"Nairabet points: {nairabet_points}")
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
                         event_details, "spread", nairabet_points, outcome, is_first_half, sport_id, home_team, away_team
                     )
@@ -2916,37 +2916,49 @@ class BetEngine(WebsiteOpener):
                 
                 # Check by market ID first (new API)
                 if market_id == spread_market:
+                    # logger.info(f"Found spread market: {market.get('name', market.get('description', ''))}")
                     for market_outcome in market.get("outcomes", []):
                         outcome_desc = market_outcome.get("name", market_outcome.get("description", ""))
                         outcome_id = market_outcome.get("id")
                         
                         # Check if this outcome matches our target (home/away)
                         if outcome_id == target_outcome_id:
-                            # Extract points from description (e.g., "Home (-0.5)" -> -0.5, "Away (+1.5)" -> 1.5)
+                            # logger.info(f"Found spread market outcome: {outcome_id}")
+                            # Use handicap field directly from API response
                             try:
-                                import re
-                                match = re.search(r'[(\[]([+-]?\d+\.?\d*)[)\]]', outcome_desc)
-                                if match:
-                                    market_points = float(match.group(1))
-                                    display_points = market_points
-                                    
-                                    # Check if this market point is in our alternate points list
-                                    for alt_point in alternate_points:
-                                        diff = abs(display_points - alt_point)
-                                        if diff < 0.01:  # Match found (allowing for floating point precision)
-                                            # Calculate priority based on distance from original target
-                                            priority_diff = abs(display_points - original_points)
-                                            
-                                            if priority_diff < best_diff:
-                                                best_diff = priority_diff
-                                                odds = market_outcome.get("value", market_outcome.get("odds", 0))
-                                                best_match = {
-                                                    "id": outcome_id,
-                                                    "odds": float(odds),
-                                                    "points": display_points,
-                                                    "description": outcome_desc
-                                                }
-                                            break  # Found match in alternate points, move to next outcome
+                                handicap_value = market_outcome.get("handicap")
+                                if handicap_value is not None:
+                                    market_points = float(handicap_value)
+                                    # logger.info(f"Found handicap from API field: {market_points}")
+                                else:
+                                    # Fallback to parsing description if handicap field not available
+                                    import re
+                                    match = re.search(r'[(\[]([+-]?\d+\.?\d*)[)\]]', outcome_desc)
+                                    if match:
+                                        market_points = float(match.group(1))
+                                        # logger.info(f"Found handicap from description: {market_points}")
+                                    else:
+                                        continue
+                                
+                                display_points = market_points
+                                
+                                # Check if this market point is in our alternate points list
+                                for alt_point in alternate_points:
+                                    diff = abs(display_points - alt_point)
+                                    if diff < 0.01:  # Match found (allowing for floating point precision)
+                                        # Calculate priority based on distance from original target
+                                        priority_diff = abs(display_points - original_points)
+                                        
+                                        if priority_diff < best_diff:
+                                            best_diff = priority_diff
+                                            odds = market_outcome.get("value", market_outcome.get("odds", 0))
+                                            best_match = {
+                                                "id": outcome_id,
+                                                "odds": float(odds),
+                                                "points": display_points,
+                                                "description": outcome_desc
+                                            }
+                                        break  # Found match in alternate points, move to next outcome
                                         
                             except (ValueError, AttributeError):
                                 continue
