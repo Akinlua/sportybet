@@ -203,6 +203,12 @@ class BetEngine(WebsiteOpener):
         # Track processed games to avoid reprocessing
         self.__processed_games = set()
         
+        # Track placed bets to avoid duplicates (max 1000)
+        self.__placed_bets = {}  # Key: bet_signature, Value: bet_details
+        
+        # Track found outcomes per game to avoid checking opposite outcomes
+        self.__game_found_outcomes = {}  # Key: game_id, Value: set of found outcomes
+        
         # Initialize bet queue for queued bet placement
         self.__bet_queue = queue.Queue()
         
@@ -2378,6 +2384,118 @@ class BetEngine(WebsiteOpener):
             return f"{home_team}_{away_team}_{pinnacle_start_time}"
         return f"{home_team}_{away_team}"
     
+    def __generate_bet_signature(self, event_id, market_id, outcome_id, odds, handicap=None, is_first_half=False):
+        """
+        Generate a unique signature for a bet to avoid duplicates
+        
+        Parameters:
+        - event_id: The event ID
+        - market_id: The market ID (e.g., "HC", "TGOU", "1x2")
+        - outcome_id: The outcome ID (e.g., "HOME", "AWAY", "OVER", "UNDER")
+        - odds: The odds value
+        - handicap: The handicap value (for spread bets)
+        - is_first_half: Whether it's a first half bet
+        
+        Returns:
+        - String signature for the bet
+        """
+        signature_parts = [str(event_id), str(market_id), str(outcome_id)]
+        if handicap is not None:
+            signature_parts.append(str(handicap))
+        if is_first_half:
+            signature_parts.append("FH")
+        return "_".join(signature_parts)
+    
+    def __is_bet_already_placed(self, bet_signature):
+        """
+        Check if a bet with the same signature has already been placed
+        
+        Parameters:
+        - bet_signature: The bet signature to check
+        
+        Returns:
+        - True if bet already placed, False otherwise
+        """
+        return bet_signature in self.__placed_bets
+    
+    def __store_placed_bet(self, bet_signature, bet_details):
+        """
+        Store details of a placed bet
+        
+        Parameters:
+        - bet_signature: The bet signature
+        - bet_details: Dictionary with bet details
+        """
+        # Limit to max 1000 bets
+        if len(self.__placed_bets) >= 1000:
+            # Remove oldest bet (first item in dict)
+            oldest_key = next(iter(self.__placed_bets))
+            del self.__placed_bets[oldest_key]
+        
+        self.__placed_bets[bet_signature] = bet_details
+        logger.info(f"Stored bet: {bet_signature}")
+    
+    def __add_found_outcome(self, game_id, line_type, outcome):
+        """
+        Add a found outcome to the game tracking to avoid checking opposite outcomes
+        
+        Parameters:
+        - game_id: The game identifier
+        - line_type: The line type (spread, money_line, total)
+        - outcome: The outcome that was found (home, away, over, under, etc.)
+        """
+        if game_id not in self.__game_found_outcomes:
+            self.__game_found_outcomes[game_id] = set()
+        
+        outcome_key = f"{line_type}_{outcome}"
+        self.__game_found_outcomes[game_id].add(outcome_key)
+        logger.info(f"Added found outcome for {game_id}: {outcome_key}")
+    
+    def __should_skip_outcome(self, game_id, line_type, outcome):
+        """
+        Check if we should skip checking this outcome because we already found the opposite
+        
+        Parameters:
+        - game_id: The game identifier
+        - line_type: The line type (spread, money_line, total)
+        - outcome: The outcome to check
+        
+        Returns:
+        - True if we should skip this outcome, False otherwise
+        """
+        if game_id not in self.__game_found_outcomes:
+            return False
+        
+        found_outcomes = self.__game_found_outcomes[game_id]
+        
+        # For spread and money_line, check if we have the opposite outcome
+        if line_type in ["spread", "money_line"]:
+            if outcome.lower() == "home":
+                opposite_key = f"{line_type}_away"
+            elif outcome.lower() == "away":
+                opposite_key = f"{line_type}_home"
+            else:
+                return False
+            
+            if opposite_key in found_outcomes:
+                logger.info(f"Skipping {line_type} {outcome} for {game_id} - already found opposite outcome")
+                return True
+        
+        # For total, check if we have the opposite outcome
+        elif line_type == "total":
+            if outcome.lower() == "over":
+                opposite_key = f"{line_type}_under"
+            elif outcome.lower() == "under":
+                opposite_key = f"{line_type}_over"
+            else:
+                return False
+            
+            if opposite_key in found_outcomes:
+                logger.info(f"Skipping {line_type} {outcome} for {game_id} - already found opposite outcome")
+                return True
+        
+        return False
+    
     def __map_asian_handicap_to_nairabet(self, points):
         """
         Map Pinnacle Asian Handicap values to Nairabet regular handicap format
@@ -2413,6 +2531,9 @@ class BetEngine(WebsiteOpener):
         away_team = event_details.get("awayTeam", "")
         sport_id = event_details.get("sportId", "1")
         
+        # Generate game ID for outcome tracking
+        game_id = self.__generate_game_id(home_team, away_team)
+        
         # Check both normal and first half markets
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
@@ -2421,6 +2542,9 @@ class BetEngine(WebsiteOpener):
             logger.info(f"\033[1m\033[1;36mChecking moneyline markets{period_suffix} for {home_team} vs {away_team}\033[0m")
             # logger.info(f"Checking moneyline markets{period_suffix} for {home_team} vs {away_team}")
             for outcome in ["home", "away", "draw"]:
+                # Skip if we already found the opposite outcome
+                if self.__should_skip_outcome(game_id, "money_line", outcome):
+                    continue
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
                     event_details, "money_line", None, outcome, is_first_half, sport_id, home_team, away_team
                 )
@@ -2443,6 +2567,9 @@ class BetEngine(WebsiteOpener):
                         # Calculate stake for this specific market
                         stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                         available_markets.append(("money_line", outcome, odds, None, ev, is_first_half, stake))
+                        
+                        # Track this found outcome to avoid checking opposite outcomes
+                        self.__add_found_outcome(game_id, "money_line", outcome)
                         # logger.info(f"Moneyline{period_suffix} {outcome}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         # Check Total markets (Over/Under)
@@ -2452,6 +2579,10 @@ class BetEngine(WebsiteOpener):
             # logger.info(f"Checking total markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["over", "under"]:
+                # Skip if we already found the opposite outcome
+                if self.__should_skip_outcome(game_id, "total", outcome):
+                    continue
+                    
                 # Try common total points: 0.5, 1.5, 2.5, 3.5, 4.5, 5.5
                 for points in [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]:
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
@@ -2476,6 +2607,9 @@ class BetEngine(WebsiteOpener):
                             # Calculate stake for this specific market
                             stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                             available_markets.append(("total", outcome, odds, actual_points, ev, is_first_half, stake))
+                            
+                            # Track this found outcome to avoid checking opposite outcomes
+                            self.__add_found_outcome(game_id, "total", outcome)
                             # logger.info(f"Total{period_suffix} {outcome} {actual_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         # Check Asian Handicap markets (with mapping to Nairabet regular handicap)
@@ -2485,6 +2619,10 @@ class BetEngine(WebsiteOpener):
             # logger.info(f"Checking handicap markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["home", "away"]:
+                # Skip if we already found the opposite outcome
+                if self.__should_skip_outcome(game_id, "spread", outcome):
+                    continue
+                    
                 # Try common handicap points: -2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5
                 for points in [-2.5, -2.0, -1.5, -1.0, 0.5, 1.0, 1.5, 2.0, 2.5]:
                     # Map Pinnacle Asian Handicap to Nairabet regular handicap
@@ -2514,6 +2652,9 @@ class BetEngine(WebsiteOpener):
                             stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                             # Store the Nairabet points for actual betting, but use Pinnacle points for EV display
                             available_markets.append(("spread", outcome, odds, nairabet_points, ev, is_first_half, stake))
+                            
+                            # Track this found outcome to avoid checking opposite outcomes
+                            self.__add_found_outcome(game_id, "spread", outcome)
                             # logger.info(f"Handicap{period_suffix} {outcome} - Pinnacle {points} → Nairabet {nairabet_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         # Check DNB markets (when handicap is 0)
@@ -2523,6 +2664,10 @@ class BetEngine(WebsiteOpener):
             # logger.info(f"Checking DNB markets{period_suffix} for {home_team} vs {away_team}")
             
             for outcome in ["home", "away"]:
+                # Skip if we already found the opposite outcome
+                if self.__should_skip_outcome(game_id, "spread", outcome):
+                    continue
+                    
                 bet_code, odds, _ = self.__find_market_bet_code_with_points(
                     event_details, "spread", 0.0, outcome, is_first_half, sport_id, home_team, away_team
                 )
@@ -2545,6 +2690,9 @@ class BetEngine(WebsiteOpener):
                         # Calculate stake for this specific market
                         stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
                         available_markets.append(("DNB", outcome, odds, 0.0, ev, is_first_half, stake))
+                        
+                        # Track this found outcome to avoid checking opposite outcomes
+                        self.__add_found_outcome(game_id, "spread", outcome)
                         # logger.info(f"DNB{period_suffix} {outcome}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         logger.info(f"Found {len(available_markets)} markets with positive EV for {home_team} vs {away_team}")
@@ -2623,11 +2771,41 @@ class BetEngine(WebsiteOpener):
                     if is_first_half:
                         modified_shaped_data["periodNumber"] = "1"
                     
+                    # Check for duplicate bet before placing
+                    event_id = event_details.get("id", "unknown")
+                    market_id = market_type
+                    outcome_id = outcome.upper()
+                    bet_signature = self.__generate_bet_signature(
+                        event_id, market_id, outcome_id, odds, points, is_first_half
+                    )
+                    
+                    if self.__is_bet_already_placed(bet_signature):
+                        logger.info(f"Bet already placed, skipping: {bet_signature}")
+                        continue
+                    
                     # Place the bet
                     success = self.__place_bet(event_details, market_type, outcome, odds, modified_shaped_data, is_first_half, stake)
                     if success:
                         bets_placed += 1
                         logger.info(f"Successfully placed bet on {market_type}{period_suffix} - {outcome}")
+                        
+                        # Store bet details
+                        bet_details = {
+                            "event_id": event_id,
+                            "market_id": market_id,
+                            "outcome_id": outcome_id,
+                            "odds": odds,
+                            "handicap": points,
+                            "line_type": market_type,
+                            "outcome": outcome,
+                            "is_first_half": is_first_half,
+                            "stake": stake,
+                            "timestamp": time.time(),
+                            "home_team": home_team,
+                            "away_team": away_team,
+                            "ev": ev
+                        }
+                        self.__store_placed_bet(bet_signature, bet_details)
                     else:
                         logger.error(f"Failed to place bet on {market_type}{period_suffix} - {outcome}")
                         
