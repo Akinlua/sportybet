@@ -1297,8 +1297,15 @@ class BetEngine(WebsiteOpener):
                             self.__take_screenshot("odds_change_no_shaped_data")
                             return False
                         
+                        # Get event ID from shaped data and fetch event details
+                        event_id = current_shaped_data.get("eventId")
+                        if not event_id:
+                            logger.error("No eventId found in shaped data")
+                            self.__take_screenshot("odds_change_no_event_id")
+                            return False
+                        
                         # Get event details from Nairabet API to get exact odds
-                        event_details = self.__get_event_details(current_shaped_data)
+                        event_details = self.__get_event_details(event_id)
                         if not event_details:
                             logger.error("Failed to get event details from Nairabet API")
                             self.__take_screenshot("odds_change_no_event_details")
