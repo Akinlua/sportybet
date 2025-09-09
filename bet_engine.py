@@ -1383,6 +1383,7 @@ class BetEngine(WebsiteOpener):
                     
             except Exception as e:
                 logger.error(f"Error clicking place bet button: {e}")
+                self.__take_screenshot("error_clicking_place_bet_button")
                 return False
                 
         except Exception as e:
