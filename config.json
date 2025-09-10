@@ -23,24 +23,24 @@
         "timeout": 30
     },
     "bet_settings": {
-        "min_ev": 5.5,
+        "min_ev": 4.0,
         "kelly_fraction": 0.3,
-        "min_stake": 1500,
-        "max_stake": 10000,
+        "min_stake": 100,
+        "max_stake": 100,
         "bankroll": 1000,
-        "max_pinnacle_odds": 3.0,
+        "max_pinnacle_odds": 3.5,
         "odds_based_stakes": {
             "low_odds": {
-                "max_odds": 1.99,
-                "min_odds": 0.0,
-                "min_stake": 6000,
-                "max_stake": 12000
+                "max_odds": 5.0,
+                "min_odds": 1.5,
+                "min_stake": 100,
+                "max_stake": 100
             },
             "medium_odds": {
-                "min_odds": 2.0,
-                "max_odds": 3.0,
-                "min_stake": 3000,
-                "max_stake": 7000
+                "min_odds": 1.5,
+                "max_odds": 5.0,
+                "min_stake": 100,
+                "max_stake": 100
             }
         }
     }
