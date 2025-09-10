@@ -1169,6 +1169,19 @@ class BetEngine(WebsiteOpener):
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window: {e}")
             time.sleep(3)
+            
+            # Check and handle betslip "Remove all" button
+            try:
+                remove_all_button = self.driver.find_element(By.CSS_SELECTOR, ".betslip-header__remove-all")
+                if "betslip-header__remove-all--disabled" not in remove_all_button.get_attribute("class"):
+                    logger.info("Remove all button is enabled, clicking it to clear betslip")
+                    remove_all_button.click()
+                    time.sleep(1)  # Wait for betslip to clear
+                else:
+                    logger.info("Remove all button is disabled, betslip is already empty")
+            except Exception as e:
+                logger.warning(f"Could not find or interact with Remove all button: {e}")
+            
             # Find and click the market/outcome
             market_element = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team)
             # logger.info(f"Market element: {market_element}")
