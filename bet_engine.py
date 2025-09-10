@@ -964,21 +964,25 @@ class BetEngine(WebsiteOpener):
                             # Check start time if available
                             time_match_score = 0
                             if pinnacle_start_time and "startTime" in event:
+                                logger.info(f"Pinnacle start time: {pinnacle_start_time}")
+                                logger.info(f"Nairabet start time: {event['startTime']}")
                                 nairabet_start_time = event["startTime"]
                                 try:
                                     # Both Pinnacle and Nairabet times are in milliseconds (Unix timestamp)
                                     # No need for timezone conversion, just compare the raw millisecond values
-                                    time_diff_hours = abs(int(pinnacle_start_time) - nairabet_start_time) / (1000 * 60 * 60)
+                                    time_diff_hours = abs(int(pinnacle_start_time) - int(nairabet_start_time)) / (1000 * 60 * 60)
                                     
                                     if time_diff_hours <= 1.0833:  # Within 1 hour and 5 minutes
                                         time_match_score = 10
                                         match_score += time_match_score
                                         # logger.info(f"Time match found: Pinnacle={pinnacle_start_time}, Nairabet={nairabet_start_time}, diff={time_diff_hours:.2f}h")
                                     else:
-                                        logger.info(f"Time difference: {time_diff_hours:.2f} hours, not the right game")
+                                        logger.info(f"Time difference: {time_diff_hours:.2f} hours, skipping event - not the right game")
+                                        continue  # Skip this event entirely
                                             
                                 except Exception as e:
                                     logger.error(f"Error parsing time: {e}")
+                                    continue  # Skip this event if time parsing fails
                                 
                             # Add to potential matches if score is positive
                             if match_score > 0:
