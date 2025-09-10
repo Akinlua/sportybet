@@ -2461,7 +2461,12 @@ class BetEngine(WebsiteOpener):
     
     def __should_skip_outcome(self, game_id, line_type, outcome):
         """
-        Check if we should skip checking this outcome because we already found the opposite
+        Check if we should skip checking this outcome based on found outcomes
+        
+        For spread and money_line: If we found "home" for either line type, only check "home" for both.
+        If we found "away" for either line type, only check "away" for both.
+        
+        For total: Check if we have the opposite outcome (over/under)
         
         Parameters:
         - game_id: The game identifier
@@ -2476,18 +2481,25 @@ class BetEngine(WebsiteOpener):
         
         found_outcomes = self.__game_found_outcomes[game_id]
         
-        # For spread and money_line, check if we have the opposite outcome
+        # For spread and money_line, check if we have found home or away for either line type
         if line_type in ["spread", "money_line"]:
-            if outcome.lower() == "home":
-                opposite_key = f"{line_type}_away"
-            elif outcome.lower() == "away":
-                opposite_key = f"{line_type}_home"
-            else:
-                return False
+            # Check if we have found "home" for either spread or money_line
+            has_home_spread = "spread_home" in found_outcomes
+            has_home_moneyline = "money_line_home" in found_outcomes
+            has_away_spread = "spread_away" in found_outcomes
+            has_away_moneyline = "money_line_away" in found_outcomes
             
-            if opposite_key in found_outcomes:
-                logger.info(f"Skipping {line_type} {outcome} for {game_id} - already found opposite outcome")
-                return True
+            # If we found "home" for either line type, only allow "home" outcomes
+            if has_home_spread or has_home_moneyline:
+                if outcome.lower() != "home":
+                    logger.info(f"Skipping {line_type} {outcome} for {game_id} - already found home outcome for spread/moneyline")
+                    return True
+            
+            # If we found "away" for either line type, only allow "away" outcomes
+            elif has_away_spread or has_away_moneyline:
+                if outcome.lower() != "away":
+                    logger.info(f"Skipping {line_type} {outcome} for {game_id} - already found away outcome for spread/moneyline")
+                    return True
         
         # For total, check if we have the opposite outcome
         elif line_type == "total":
