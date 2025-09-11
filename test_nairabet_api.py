@@ -9,9 +9,29 @@ import sys
 import json
 import requests
 
+def load_proxy_from_config():
+    """Load proxy configuration from config.json"""
+    try:
+        if os.path.exists("config.json"):
+            with open("config.json", "r") as f:
+                config = json.load(f)
+                accounts = config.get("accounts", [])
+                if accounts and accounts[0].get("proxy"):
+                    proxy_url = accounts[0]["proxy"]
+                    print(f"Using proxy from config: {proxy_url}")
+                    return {"http": proxy_url, "https": proxy_url}
+        print("No proxy found in config, using direct connection")
+        return None
+    except Exception as e:
+        print(f"Error loading proxy config: {e}")
+        return None
+
 def test_search_api():
     """Test the search API endpoint"""
     print("=== Testing Search API ===")
+    
+    # Load proxy configuration
+    proxies = load_proxy_from_config()
     
     search_url = "https://sports-api.nairabet.com/v2/events/search"
     params = {
@@ -30,7 +50,7 @@ def test_search_api():
     }
     
     try:
-        response = requests.get(search_url, params=params, headers=headers, timeout=10)
+        response = requests.get(search_url, params=params, headers=headers, proxies=proxies, timeout=10)
         response.raise_for_status()
         
         search_results = response.json()
@@ -64,6 +84,9 @@ def test_event_details_api(event_id):
         
     print(f"\n=== Testing Event Details API for ID: {event_id} ===")
     
+    # Load proxy configuration
+    proxies = load_proxy_from_config()
+    
     details_url = f"https://sports-api.nairabet.com/v2/events/{event_id}"
     params = {
         'country': 'NG',
@@ -80,7 +103,7 @@ def test_event_details_api(event_id):
     }
     
     try:
-        response = requests.get(details_url, params=params, headers=headers, timeout=10)
+        response = requests.get(details_url, params=params, headers=headers, proxies=proxies, timeout=10)
         response.raise_for_status()
         
         event_details = response.json()
