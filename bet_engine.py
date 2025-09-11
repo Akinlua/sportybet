@@ -694,9 +694,18 @@ class BetEngine(WebsiteOpener):
             
             # Navigate to Nairabet login page
             login_url = f"{self.__bet_host}"
-            self.driver.get(login_url)
-            # time.sleep(3)  # Give page time to load
-            logger.info(f"Navigated to login page: {login_url}")
+            try:
+                self.driver.get(login_url)
+                logger.info(f"Navigated to login page: {login_url}")
+            except Exception as get_err:
+                msg = str(get_err).lower()
+                if ("invalid session id" in msg or "disconnected" in msg):
+                    logger.error("Invalid Selenium session detected. Restarting browser and retrying login navigation...")
+                    self.__restart_browser(account)
+                    self.driver.get(login_url)
+                    logger.info(f"Navigated to login page after restart: {login_url}")
+                else:
+                    raise
             
             # Open login modal from header
             try:
@@ -804,7 +813,7 @@ class BetEngine(WebsiteOpener):
             
             # Minimal recovery for Selenium tab crashes (only on first attempt)
             msg = str(e).lower()
-            if ("tab crashed" in msg or "chrome not reachable" in msg or "disconnected" in msg) and not _retry:
+            if ("tab crashed" in msg or "chrome not reachable" in msg or "disconnected" in msg or "invalid session id" in msg) and not _retry:
                 logger.error("Detected browser/tab crash during login. Restarting browser and retrying once...")
                 self.__restart_browser(account)
                 return self.__do_login_for_account(account, _retry=True)
@@ -1406,7 +1415,7 @@ class BetEngine(WebsiteOpener):
         except Exception as e:
             # Minimal recovery for Selenium tab crashes
             msg = str(e).lower()
-            if ("tab crashed" in msg or "chrome not reachable" in msg or "disconnected" in msg):
+            if ("tab crashed" in msg or "chrome not reachable" in msg or "disconnected" in msg or "invalid session id" in msg):
                 logger.error("Detected browser/tab crash during bet placement. Restarting browser and retrying once...")
                 self.__restart_browser(account)
                 return self.__place_bet_with_selenium(account, bet_url, market_type, outcome, odds, stake, points, is_first_half)
