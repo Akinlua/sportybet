@@ -1505,6 +1505,7 @@ class BetEngine(WebsiteOpener):
         # Asian Handicap
         elif market_type_lower == "spread":
             if points is None:
+                logger.info(f"Points is None, returning None")
                 return None
             # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
             logger.info(f"DEBUG: points={points}, points_float={points}, abs_points={abs(float(points))}")
