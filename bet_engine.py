@@ -1507,8 +1507,9 @@ class BetEngine(WebsiteOpener):
             if points is None:
                 return None
             # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
+            logger.info(f"DEBUG: points={points}, points_float={points}, abs_points={abs(float(points))}")
             if abs(float(points)) < 0.01:  # Using small threshold for floating point comparison
-                logger.warning(f"Handicap is 0, looking for DNB (Draw No Bet) market instead of Asian Handicap")
+                logger.info(f"Handicap is 0, looking for DNB (Draw No Bet) market instead of Asian Handicap")
                 # For DNB, use team names from shaped_data (passed as parameters)
                 return self.__find_dnb_outcome(outcome_lower, is_first_half, home_team, away_team)
             
@@ -1782,7 +1783,7 @@ class BetEngine(WebsiteOpener):
                     # This market doesn't have the expected structure, continue to next
                     continue
             
-            logger.warning(f"Could not find handicap market for {target_points} {outcome}")
+            logger.info(f"Could not find handicap market for {target_points} {outcome}")
             return None
             
         except Exception as e:
@@ -1992,7 +1993,7 @@ class BetEngine(WebsiteOpener):
                     logger.info(f"Account {account.username} cannot place bet")
             
             if not any_bet_placed:
-                logger.warning("No available accounts to place bet.")
+                # logger.warning("No available accounts to place bet.")
                 # Re-add to queue with a delay
                 # threading.Timer(60.0, lambda: self.__bet_queue.put(bet_data)).start()
                 return False

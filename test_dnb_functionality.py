@@ -28,7 +28,7 @@ def test_dnb_functionality():
             "type": "spread",
             "meta": {
                 "team": "home",
-                "value": "0"  # This should trigger DNB market search
+                "value": 0.0  # This should trigger DNB market search
             }
         },
         "match_type": "test",
