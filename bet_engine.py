@@ -2808,7 +2808,7 @@ class BetEngine(WebsiteOpener):
             for market_type, outcome, odds, points, ev, is_first_half, stake in available_markets:
                 try:
                     period_suffix = " (1st Half)" if is_first_half else ""
-                    logger.info(f"Placing bet: {market_type}{period_suffix} - {outcome} with odds {odds} (EV: {ev:.2f}%)")
+                    logger.info(f"Placing bet: {market_type}{period_suffix}, points: {points} - {outcome} with odds {odds} (EV: {ev:.2f}%)")
                     
                     # Create modified shaped data for this specific market
                     modified_shaped_data = shaped_data.copy()
