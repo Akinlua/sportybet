@@ -2670,7 +2670,7 @@ class BetEngine(WebsiteOpener):
                     continue
                     
                 # Try common handicap points: -2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5
-                for points in [-2.5, -2.0, -1.5, -1.0, 0.5, 1.0, 1.5, 2.0, 2.5]:
+                for points in [-4.5, -3.5, -2.5, -1.5, 0.5, 1.5, 2.5, 3.5, 4.5]:
                     # Map Pinnacle Asian Handicap to Nairabet regular handicap
                     nairabet_points = self.__map_asian_handicap_to_nairabet(points)
                     logger.info(f"Nairabet points: {nairabet_points}")
