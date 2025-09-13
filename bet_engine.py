@@ -1450,7 +1450,8 @@ class BetEngine(WebsiteOpener):
         """
         market_type_lower = market_type.lower()
         outcome_lower = outcome.lower()
-        
+
+        logger.info(f"market_type_lower: {market_type_lower}, outcome_lower: {outcome_lower}, is_first_half: {is_first_half}, home_team: {home_team}, away_team: {away_team}")
         # Handle first half navigation
         if is_first_half:
             # Click halftime button first
@@ -2737,7 +2738,7 @@ class BetEngine(WebsiteOpener):
                         
                         # Calculate stake for this specific market
                         stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
-                        available_markets.append(("DNB", outcome, odds, 0.0, ev, is_first_half, stake))
+                        available_markets.append(("spread", outcome, odds, 0.0, ev, is_first_half, stake))
                         
                         # Track this found outcome to avoid checking opposite outcomes
                         self.__add_found_outcome(game_id, "spread", outcome)
