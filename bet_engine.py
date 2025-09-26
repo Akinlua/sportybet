@@ -856,7 +856,9 @@ class BetEngine(WebsiteOpener):
         potential_matches = []
         
         # List of terms that indicate the wrong team variant
-        variant_indicators = ["ladies", "women", "u21", "u-21", "u23", "u-23", "youth", "junior", "b team"]
+        # variant_indicators = ["ladies", "women", "u21", "u-21", "u23", "u-23", "youth", "junior", "b team"]
+        variant_indicators = []
+
         
         for search_term in search_strategies:
             # logger.info(f"Trying search term: {search_term}")
