@@ -1192,7 +1192,7 @@ class BetEngine(WebsiteOpener):
                 logger.warning(f"Could not find or interact with Remove all button: {e}")
             
             # Find and click the market/outcome
-            market_element = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team)
+            market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team)
             # logger.info(f"Market element: {market_element}")
             if not market_element:
                 logger.error("Could not find market element")
@@ -1203,24 +1203,22 @@ class BetEngine(WebsiteOpener):
                 logger.info(f"Found market element for: {market_type} - {outcome} - {points}")
                 
                 # # Verify odds before placing bet
-                # try:
-                #     # Use more specific selector to find odds within the correct div structure
-                #     odds_element = market_element.find_element(By.CSS_SELECTOR, ".has-desc.m-outcome.multiple .odds")
-                #     odds_text = odds_element.text.strip()
-                #     import re
-                #     odds_match = re.search(r'(\d+\.?\d*)', odds_text)
-                #     if odds_match:
-                #         actual_odds = float(odds_match.group(1))
-                #         odds_diff = abs(actual_odds - odds)
+                try:
+                    if odds_from_api:
+                        actual_odds = float(odds_from_api)
+                        odds_diff = abs(actual_odds - odds)
                         
-                #         if odds_diff > 0.1:  # Allow 0.1 difference
-                #             bet_logger.error(f"⚠️ Odds mismatch! Expected: {odds}, Actual: {actual_odds}")
-                #             bet_logger.error("Bet cancelled due to odds change")
-                #             return False
-                #         else:
-                #             bet_logger.info(f"✅ Odds verified: {actual_odds} (expected: {odds})")
-                # except Exception as e:
-                #     bet_logger.error(f"Could not verify odds: {e}")
+                        if odds_diff > 0.1:  # Allow 0.1 difference
+                            logger.error(f"⚠️ Odds mismatch! Expected: {odds}, Actual: {actual_odds}")
+                            logger.error("Bet cancelled due to odds change")
+                            return False
+                        else:
+                            logger.info(f"✅ Odds verified: {actual_odds} (expected: {odds})")
+                    else:
+                        logger.error("No odds from API")    
+                        return False
+                except Exception as e:
+                    logger.error(f"Could not verify odds: {e}")
                 
                 # Simple direct clicking approach - no scrolling
                 try:
@@ -1313,73 +1311,73 @@ class BetEngine(WebsiteOpener):
                 
                 # If button says "Accept Odds...", odds have changed - need to recalculate EV
                 if "accept odds" in button_text.lower():
-                    logger.warning("⚠️ Odds have changed! Recalculating EV with new Nairabet odds...")
-                    
-                    try:
-                        # Get the shaped_data from the current bet context
-                        current_shaped_data = getattr(self, '_current_shaped_data', None)
-                        if not current_shaped_data:
-                            logger.error("No shaped_data available for EV recalculation")
-                            self.__take_screenshot("odds_change_no_shaped_data")
-                            return False
+                    logger.warning("⚠️ Odds have changed! discarding bet...")
+                    return False
+                    # try:
+                    #     # Get the shaped_data from the current bet context
+                    #     current_shaped_data = getattr(self, '_current_shaped_data', None)
+                    #     if not current_shaped_data:
+                    #         logger.error("No shaped_data available for EV recalculation")
+                    #         self.__take_screenshot("odds_change_no_shaped_data")
+                    #         return False
                         
-                        # Get event ID from shaped data and fetch event details
-                        event_id = current_shaped_data.get("eventId")
-                        if not event_id:
-                            logger.error("No eventId found in shaped data")
-                            self.__take_screenshot("odds_change_no_event_id")
-                            return False
+                    #     # Get event ID from shaped data and fetch event details
+                    #     event_id = current_shaped_data.get("eventId")
+                    #     if not event_id:
+                    #         logger.error("No eventId found in shaped data")
+                    #         self.__take_screenshot("odds_change_no_event_id")
+                    #         return False
                         
-                        # Get event details from Nairabet API to get exact odds
-                        event_details = self.__get_event_details(event_id)
-                        if not event_details:
-                            logger.error("Failed to get event details from Nairabet API")
-                            self.__take_screenshot("odds_change_no_event_details")
-                            return False
+                    #     # Get event details from Nairabet API to get exact odds
+                    #     event_details = self.__get_event_details(event_id)
+                    #     if not event_details:
+                    #         logger.error("Failed to get event details from Nairabet API")
+                    #         self.__take_screenshot("odds_change_no_event_details")
+                    #         return False
                         
-                        # Extract bet parameters from shaped_data
-                        line_type = current_shaped_data["category"]["type"].lower()
-                        outcome = current_shaped_data["category"]["meta"]["team"]
-                        points = current_shaped_data["category"]["meta"].get("value")
-                        is_first_half = current_shaped_data.get("periodNumber") == "1"
-                        home_team = current_shaped_data["game"]["home"]
-                        away_team = current_shaped_data["game"]["away"]
+                    #     # Extract bet parameters from shaped_data
+                    #     line_type = current_shaped_data["category"]["type"].lower()
+                    #     outcome = current_shaped_data["category"]["meta"]["team"]
+                    #     points = current_shaped_data["category"]["meta"].get("value")
+                    #     is_first_half = current_shaped_data.get("periodNumber") == "1"
+                    #     home_team = current_shaped_data["game"]["home"]
+                    #     away_team = current_shaped_data["game"]["away"]
                         
-                        # Get the exact market and odds from Nairabet API using the same method as initial bet
-                        bet_code, new_odds, _ = self.__find_market_bet_code_with_points(
-                            event_details, line_type, outcome, points, is_first_half, home_team, away_team
-                        )
+                    #     # Get the exact market and odds from Nairabet API using the same method as initial bet
+                    #     bet_code, new_odds, _ = self.__find_market_bet_code_with_points(
+                    #         event_details, line_type, outcome, points, is_first_half, home_team, away_team
+                    #     )
                         
-                        if not new_odds:
-                            logger.error("Could not get new odds from Nairabet API")
-                            self.__take_screenshot("odds_change_no_odds_from_api")
-                            return False
+                    #     if not new_odds:
+                    #         logger.error("Could not get new odds from Nairabet API")
+                    #         self.__take_screenshot("odds_change_no_odds_from_api")
+                    #         return False
                         
-                        logger.info(f"New odds from Nairabet API: {new_odds}")
+                    #     logger.info(f"New odds from Nairabet API: {new_odds}")
                         
-                        # Recalculate EV with new odds
-                        new_ev = self.__calculate_ev(new_odds, current_shaped_data)
-                        logger.info(f"📊 Recalculated EV with new odds {new_odds}: {new_ev:.2f}%")
+                    #     # Recalculate EV with new odds
+                    #     new_ev = self.__calculate_ev(new_odds, current_shaped_data)
+                    #     logger.info(f"📊 Recalculated EV with new odds {new_odds}: {new_ev:.2f}%")
                         
-                        if new_ev > 0:
-                            logger.info("✅ EV still positive, accepting odds change...")
-                            time.sleep(1)  # Wait a moment for button to update
+                    #     if new_ev > 0:
+                    #         logger.info("✅ EV still positive, accepting odds change...")
+                    #         time.sleep(1)  # Wait a moment for button to update
                             
-                            # Click accept odds button
-                            updated_button = WebDriverWait(self.driver, 10).until(
-                                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
-                            )
-                            updated_button.click()
-                            logger.info("Clicked accept odds button")
-                        else:
-                            logger.warning(f"❌ EV turned negative ({new_ev:.2f}%), aborting bet...")
-                            self.__take_screenshot("odds_change_negative_ev")
-                            return False  # Abort this bet
+                    #         # Click accept odds button
+                    #         updated_button = WebDriverWait(self.driver, 10).until(
+                    #             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
+                    #         )
+                    #         updated_button.click()
+                    #         logger.info("Clicked accept odds button")
+                    #     else:
+                    #         logger.warning(f"❌ EV turned negative ({new_ev:.2f}%), aborting bet...")
+                    #         self.__take_screenshot("odds_change_negative_ev")
+                    #         return False  # Abort this bet
                             
-                    except Exception as odds_check_error:
-                        logger.error(f"Error checking odds change: {odds_check_error}")
-                        self.__take_screenshot("odds_change_error")
-                        return False  # Any error = abort bet
+                    # except Exception as odds_check_error:
+                    #     logger.error(f"Error checking odds change: {odds_check_error}")
+                    #     self.__take_screenshot("odds_change_error")
+                    #     return False  # Any error = abort bet
                 
                 # Wait for success confirmation
                 try:
@@ -1474,7 +1472,7 @@ class BetEngine(WebsiteOpener):
                 time.sleep(2)
             except Exception as e:
                 logger.error(f"Could not click first half tab: {e}")
-                return None
+                return None, None
         
         # Get all market rows
         try:
@@ -1488,10 +1486,10 @@ class BetEngine(WebsiteOpener):
             market_rows = self.driver.find_elements(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
             if not market_rows:
                 logger.warning("No market rows found")
-                return None
+                return None, None
         except Exception as e:
             logger.error(f"Error finding market rows: {e}")
-            return None
+            return None, None   
         
         # 1X2 (Moneyline) - First div from the list
         if market_type_lower == "moneyline" or market_type_lower == "money_line":
@@ -1500,14 +1498,14 @@ class BetEngine(WebsiteOpener):
         # Over/Under
         elif market_type_lower == "total":
             if not points:
-                return None
+                return None, None
             return self.__find_total_outcome(points, outcome_lower)
         
         # Asian Handicap
         elif market_type_lower == "spread":
             if points is None:
                 logger.info(f"Points is None, returning None")
-                return None
+                return None, None
             # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
             logger.info(f"DEBUG: points={points}, points_float={points}, abs_points={abs(float(points))}")
             if abs(float(points)) < 0.01:  # Using small threshold for floating point comparison
@@ -1517,7 +1515,7 @@ class BetEngine(WebsiteOpener):
             
             return self.__find_handicap_outcome(points, outcome_lower, home_team, away_team)
         
-        return None
+        return None, None
     
     def __find_1x2_outcome(self, market_row, outcome):
         """
@@ -1538,7 +1536,7 @@ class BetEngine(WebsiteOpener):
             event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
             if not event_markets:
                 logger.warning("No event-market divs found for 1X2")
-                return None
+                return None, None
             
             logger.info("finding 1x2")
             # First event-market div is for 1X2
@@ -1549,14 +1547,14 @@ class BetEngine(WebsiteOpener):
             
             if len(cells) < 3:
                 logger.warning(f"Expected 3 cells for 1X2, found {len(cells)}")
-                return None
+                return None, None
             
             # Map outcome to index: first=home, second=draw, third=away
             outcome_index = {"home": 0, "draw": 1, "away": 2}
             
             if outcome not in outcome_index:
                 logger.error(f"Invalid 1X2 outcome: {outcome}")
-                return None
+                return None, None
             
             target_cell = cells[outcome_index[outcome]]
             
@@ -1567,15 +1565,15 @@ class BetEngine(WebsiteOpener):
             try:
                 odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
                 odds_text = odds_element.text.strip()
-                logger.info(f"Found 1X2 {outcome} with odds: {odds_text}")
-                return button
+                logger.info(f"Found 1X2 {outcome} with odds: {float(odds_text)}")
+                return button, float(odds_text)
             except Exception as e:
                 logger.error(f"Could not find odds in 1X2 outcome: {e}")
-                return None
+                return None, None
                 
         except Exception as e:
             logger.error(f"Error finding 1X2 outcome: {e}")
-            return None
+            return None, None
     
     def __find_total_outcome(self, target_points, outcome):
         """
@@ -1614,7 +1612,7 @@ class BetEngine(WebsiteOpener):
             
             if not totals_market_div:
                 logger.warning("No totals market found")
-                return None
+                return None, None
             
             # Get all event-market__row divs within this totals market
             rows = totals_market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
@@ -1667,22 +1665,22 @@ class BetEngine(WebsiteOpener):
                     try:
                         odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
                         odds_text = odds_element.text.strip()
-                        logger.info(f"Found total {outcome} {target_points} with odds: {odds_text}")
-                        return button
+                        logger.info(f"Found total {outcome} {target_points} with odds: {float(odds_text)}")
+                        return button, float(odds_text)
                     except Exception as e:
                         logger.error(f"Could not find odds in total outcome: {e}")
-                        continue
+                        return None, None
                                 
                 except Exception as e:
                     # Row doesn't match, continue to next
-                    continue
+                    return None, None
                     
             logger.warning(f"Could not find total market for {target_points} {outcome}")
-            return None
+            return None, None
             
         except Exception as e:
             logger.error(f"Error finding total outcome: {e}")
-            return None
+            return None, None
     
     def __find_handicap_outcome(self, target_points, outcome, home_team, away_team):
         """
@@ -1765,8 +1763,8 @@ class BetEngine(WebsiteOpener):
                                     try:
                                         odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
                                         odds_text = odds_element.text.strip()
-                                        logger.info(f"Found handicap {outcome} {target_points} with odds: {odds_text}")
-                                        return button
+                                        logger.info(f"Found handicap {outcome} {target_points} with odds: {float(odds_text)}")
+                                        return button, float(odds_text)
                                     except Exception as e:
                                         logger.error(f"Could not find odds in handicap outcome: {e}")
                                         continue
@@ -1786,11 +1784,11 @@ class BetEngine(WebsiteOpener):
                     continue
             
             logger.info(f"Could not find handicap market for {target_points} {outcome}")
-            return None
+            return None, None
             
         except Exception as e:
             logger.error(f"Error finding handicap outcome: {e}")
-            return None
+            return None, None
 
     def __find_dnb_outcome(self, outcome, is_first_half=False, home_team=None, away_team=None):
         """
@@ -1831,14 +1829,14 @@ class BetEngine(WebsiteOpener):
             
             if not dnb_market_div:
                 logger.warning("No DNB market found")
-                return None
+                return None, None
             
             # Get all event-market__row divs within this DNB market
             rows = dnb_market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
             
             if not rows:
                 logger.warning("No rows found in DNB market")
-                return None
+                return None, None
             
             # Use the first row (there's usually only one for DNB)
             row = rows[0]
@@ -1846,7 +1844,7 @@ class BetEngine(WebsiteOpener):
             
             if len(cells) < 1:
                 logger.warning(f"Expected at least 1 cell for DNB, found {len(cells)}")
-                return None
+                return None, None
             
             # Check each cell for team name to determine which one matches our outcome
             target_cell = None
@@ -1895,7 +1893,7 @@ class BetEngine(WebsiteOpener):
                     
             if not target_cell:
                 logger.warning(f"Could not find target cell for DNB {outcome}")
-                return None
+                return None, None
             
             # Get the button inside this cell
             try:
@@ -1905,18 +1903,18 @@ class BetEngine(WebsiteOpener):
                 try:
                     odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
                     odds_text = odds_element.text.strip()
-                    logger.info(f"Found DNB {outcome} with odds: {odds_text}")
-                    return button
+                    logger.info(f"Found DNB {outcome} with odds: {float(odds_text)}")
+                    return button, float(odds_text)
                 except Exception as e:
                     logger.error(f"Could not find odds in DNB outcome: {e}")
-                    return None
+                    return None, None
             except Exception as e:
                 logger.error(f"Error finding DNB outcome: {e}")
-                return None
+                return None, None
             
         except Exception as e:
             logger.error(f"Error finding DNB outcome: {e}")
-            return None
+            return None, None
 
         
 
