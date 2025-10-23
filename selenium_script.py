@@ -54,7 +54,7 @@ class WebsiteOpener:
         # Set up Chrome options
         options = Options()
         # if headless:
-        # options.add_argument("--headless=new")
+        options.add_argument("--headless=new")
         
         # Additional options for better compatibility
         options.add_argument('--no-sandbox')
