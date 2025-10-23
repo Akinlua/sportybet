@@ -1144,7 +1144,7 @@ class BetEngine(WebsiteOpener):
             EC.presence_of_element_located((By.CSS_SELECTOR, ".event-details__market-groups"))
         )
 
-    def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None):
+    def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None, sport_id=1):
         """
         Place a bet on Nairabet using Selenium
         
@@ -1159,6 +1159,7 @@ class BetEngine(WebsiteOpener):
         - is_first_half: Whether this is a first half bet
         - home_team: Name of the home team (from shaped_data)
         - away_team: Name of the away team (from shaped_data)
+        - sport_id: Sport ID (1 for soccer, 3 for basketball)
         
         Returns:
         - True if bet was placed successfully, False otherwise
@@ -1194,8 +1195,8 @@ class BetEngine(WebsiteOpener):
                 logger.warning(f"Could not find or interact with Remove all button: {e}")
             
             # Find and click the market/outcome
-            market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team)
-            # logger.info(f"Market element: {market_element}")
+            market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team, sport_id)
+            logger.info(f"Market element: {market_element}")
             if not market_element:
                 logger.error("Could not find market element")
                 # time.sleep(100)
@@ -1279,6 +1280,7 @@ class BetEngine(WebsiteOpener):
                     logger.info(f"✅ Successfully entered stake via JavaScript: {stake}")
                 else:
                     logger.error("JavaScript fallback failed - stake input not found")
+                    # time.sleep(5)
                     return False
             except Exception as e:
                 logger.error(f"Error entering stake with selector: {e}")
@@ -1299,7 +1301,7 @@ class BetEngine(WebsiteOpener):
             # Place the bet using new Nairabet selectors
             try:
                 # Wait for the bet button to be clickable
-                place_bet_button = WebDriverWait(self.driver, 10).until(
+                place_bet_button = WebDriverWait(self.driver, 30).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
                 )
                 
@@ -1418,7 +1420,7 @@ class BetEngine(WebsiteOpener):
             if ("tab crashed" in msg or "chrome not reachable" in msg or "disconnected" in msg or "invalid session id" in msg):
                 logger.error("Detected browser/tab crash during bet placement. Restarting browser and retrying once...")
                 self.__restart_browser(account)
-                return self.__place_bet_with_selenium(account, bet_url, market_type, outcome, odds, stake, points, is_first_half)
+                return self.__place_bet_with_selenium(account, bet_url, market_type, outcome, odds, stake, points, is_first_half, home_team, away_team, sport_id)
             
             logger.error(f"Error placing bet with Selenium: {e}")
             # Take screenshot of error state
@@ -1433,7 +1435,7 @@ class BetEngine(WebsiteOpener):
             traceback.print_exc()
             return False
 
-    def __get_market_selector(self, market_type, outcome, points=None, is_first_half=False, home_team=None, away_team=None):
+    def __get_market_selector(self, market_type, outcome, points=None, is_first_half=False, home_team=None, away_team=None, sport_id=1):
         """
         Get the CSS selector for a specific market and outcome on Nairabet
         
@@ -1444,6 +1446,7 @@ class BetEngine(WebsiteOpener):
         - is_first_half: Whether this is a first half bet
         - home_team: Name of the home team (from shaped_data)
         - away_team: Name of the away team (from shaped_data)
+        - sport_id: Sport ID (1 for soccer, 3 for basketball)
         
         Returns:
         - Element or None if not found
@@ -1453,7 +1456,7 @@ class BetEngine(WebsiteOpener):
 
         logger.info(f"market_type_lower: {market_type_lower}, outcome_lower: {outcome_lower}, is_first_half: {is_first_half}, home_team: {home_team}, away_team: {away_team}")
         # Handle first half navigation
-        if is_first_half:
+        if is_first_half and not (sport_id == "3" or sport_id == 3):
             # Click halftime button first
             try:
                 # Wait for the first half button to be present and clickable (4th li element)
@@ -1493,15 +1496,24 @@ class BetEngine(WebsiteOpener):
             logger.error(f"Error finding market rows: {e}")
             return None, None   
         
+        # Check if this is basketball
+        is_basketball = (sport_id == "3" or sport_id == 3)
+        
         # 1X2 (Moneyline) - First div from the list
         if market_type_lower == "moneyline" or market_type_lower == "money_line":
-            return self.__find_1x2_outcome(market_rows[0] if market_rows else None, outcome_lower)
+            if is_basketball:
+                return self.__find_basketball_moneyline_outcome(outcome_lower, is_first_half)
+            else:
+                return self.__find_1x2_outcome(market_rows[0] if market_rows else None, outcome_lower)
         
         # Over/Under
         elif market_type_lower == "total":
             if not points:
                 return None, None
-            return self.__find_total_outcome(points, outcome_lower)
+            if is_basketball:
+                return self.__find_basketball_total_outcome(points, outcome_lower, is_first_half)
+            else:
+                return self.__find_total_outcome(points, outcome_lower)
         
         # Asian Handicap
         elif market_type_lower == "spread":
@@ -1515,7 +1527,10 @@ class BetEngine(WebsiteOpener):
                 # For DNB, use team names from shaped_data (passed as parameters)
                 return self.__find_dnb_outcome(outcome_lower, is_first_half, home_team, away_team)
             
-            return self.__find_handicap_outcome(points, outcome_lower, home_team, away_team)
+            if is_basketball:
+                return self.__find_basketball_handicap_outcome(points, outcome_lower, home_team, away_team, is_first_half)
+            else:
+                return self.__find_handicap_outcome(points, outcome_lower, home_team, away_team)
         
         return None, None
     
@@ -1918,6 +1933,333 @@ class BetEngine(WebsiteOpener):
             logger.error(f"Error finding DNB outcome: {e}")
             return None, None
 
+    def __find_basketball_moneyline_outcome(self, outcome, is_first_half=False):
+        """
+        Find the basketball moneyline outcome element for Nairabet.
+        Full game: prefer "Match Result (OT)" then "Match winner", fallback "Match Result (No OT)".
+        First half: use "1st Half Winner" (same page for basketball).
+        
+        Parameters:
+        - outcome: 'home', 'draw', or 'away'
+        - is_first_half: whether to target 1st-half winner market
+        
+        Returns:
+        - Tuple of (button_element, odds) or (None, None) if not found
+        """
+        try:
+            logger.info(f"Finding basketball moneyline outcome for {('1st Half ' if is_first_half else 'Full Game ')}{outcome}")
+            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
+            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
+
+            # Priority order of headers
+            if is_first_half:
+                target_headers = ["1st Half Winner"]
+            else:
+                target_headers = ["Match Result (OT)", "Match Result (No OT)"]
+
+            moneyline_market_div = None
+            for header_choice in target_headers:
+                for market_div in event_markets:
+                    try:
+                        header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
+                        header_text = header.text.strip()
+                        if header_choice.lower() in header_text.lower():
+                            moneyline_market_div = market_div
+                            logger.info(f"Found basketball moneyline market: {header_text}")
+                            break
+                    except Exception:
+                        continue
+                if moneyline_market_div:
+                    break
+
+            if not moneyline_market_div:
+                logger.warning("No basketball moneyline market found")
+                return None, None
+
+            cells = moneyline_market_div.find_elements(By.CSS_SELECTOR, ".event-market__cell")
+            if len(cells) < 2:
+                logger.warning(f"Expected at least 2 cells for basketball moneyline, found {len(cells)}")
+                return None, None
+
+            # Determine outcome index based on number of cells
+            if len(cells) == 3:
+                outcome_index = {"home": 0, "draw": 1, "away": 2}
+            else:
+                outcome_index = {"home": 0, "away": 1}
+
+            if outcome not in outcome_index:
+                logger.error(f"Invalid basketball moneyline outcome for available cells: {outcome}")
+                return None, None
+
+            target_cell = cells[outcome_index[outcome]]
+            button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
+
+            try:
+                odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
+                odds_text = odds_element.text.strip()
+                logger.info(f"Found basketball moneyline {outcome} with odds: {float(odds_text)}")
+                return button, float(odds_text)
+            except Exception as e:
+                logger.error(f"Could not find odds in basketball moneyline outcome: {e}")
+                return None, None
+        except Exception as e:
+            logger.error(f"Error finding basketball moneyline outcome: {e}")
+            return None, None
+
+    def __find_basketball_total_outcome(self, target_points, outcome, is_first_half=False):
+        """
+        Find the basketball total points outcome element for Nairabet
+        For basketball, first-half totals are not targeted; skip when is_first_half is True.
+        Looks for "Total Points" market for full game totals.
+        
+        Parameters:
+        - target_points: The points value to find
+        - outcome: 'over' or 'under'
+        - is_first_half: if True, skip search and return None
+        
+        Returns:
+        - Element or None if not found
+        """
+        try:
+            if is_first_half:
+                logger.info("Skipping basketball 1st-half totals per strategy")
+                return None, None
+
+            logger.info(f"Finding basketball total outcome for {outcome} {target_points}")
+            # Get the active market group div
+            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
+            
+            # Get all event-market divs and find the one with "Total Points"
+            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
+            
+            totals_market_div = None
+            for market_div in event_markets:
+                try:
+                    # Check if this market has "Total Points" in the header
+                    header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
+                    header_text = header.text.strip()
+                    
+                    if "Total Points" in header_text:
+                        totals_market_div = market_div
+                        logger.info(f"Found basketball totals market: {header_text}")
+                        break
+                        
+                except Exception:
+                    # This market doesn't have the expected structure, continue to next
+                    continue
+            
+            if not totals_market_div:
+                logger.warning("No basketball totals market found")
+                return None, None
+            
+            # Get all event-market__row divs within this totals market
+            rows = totals_market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
+            
+            for row in rows:
+                try:
+                    # Each row has 2 cells: first for over, second for under
+                    cells = row.find_elements(By.CSS_SELECTOR, ".event-market__cell")
+                    
+                    if len(cells) < 2:
+                        logger.warning(f"Expected 2 cells for basketball totals row, found {len(cells)}")
+                        continue
+                    
+                    # Check if this row has the target points by looking at cell titles
+                    target_cell = None
+                    found_points = False
+                    
+                    for cell in cells:
+                        try:
+                            # Get the cell title (e.g., "Over 231.5" or "Under 231.5")
+                            title_element = cell.find_element(By.CSS_SELECTOR, ".event-market__cell-title")
+                            title_text = title_element.text.strip()
+                            
+                            # Extract points from title (e.g., "Over 231.5" -> 231.5)
+                            import re
+                            points_match = re.search(r'(\d+\.?\d*)', title_text)
+                            if points_match:
+                                cell_points = float(points_match.group(1))
+                                
+                                # Check if this cell matches our target points and outcome
+                                if abs(cell_points - float(target_points)) < 0.01:  # Allow small floating point differences
+                                    # Check if the outcome matches (over/under)
+                                    if (outcome == "over" and "Over" in title_text) or (outcome == "under" and "Under" in title_text):
+                                        target_cell = cell
+                                        found_points = True
+                                        logger.info(f"Found basketball total {outcome} {target_points} in: {title_text}")
+                                        break
+                                        
+                        except Exception:
+                            # Cell doesn't have expected structure, continue to next
+                            continue
+                    
+                    if found_points and target_cell:
+                        break
+                        
+                except Exception:
+                    # Row doesn't have expected structure, continue to next
+                    continue
+            
+            if not target_cell:
+                logger.warning(f"Could not find basketball total {outcome} {target_points}")
+                return None, None
+            
+            # Get the button inside this cell
+            try:
+                button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
+                
+                # Verify odds
+                try:
+                    odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
+                    odds_text = odds_element.text.strip()
+                    logger.info(f"Found basketball total {outcome} {target_points} with odds: {float(odds_text)}")
+                    return button, float(odds_text)
+                except Exception as e:
+                    logger.error(f"Could not find odds in basketball total outcome: {e}")
+                    return None, None
+            except Exception as e:
+                logger.error(f"Error finding basketball total outcome: {e}")
+                return None, None
+                
+        except Exception as e:
+            logger.error(f"Error finding basketball total outcome: {e}")
+            return None, None
+
+    def __find_basketball_handicap_outcome(self, target_points, outcome, home_team, away_team, is_first_half=False):
+        """
+        Find the basketball handicap outcome element for Nairabet
+        Searches both "Handicap - Rolling Middle Line" and "Game Handicap" for full game,
+        and "1st Half Handicap - Rolling Middle Line" for first-half bets.
+        
+        Parameters:
+        - target_points: The handicap value to find
+        - outcome: 'home' or 'away'
+        - home_team: Name of the home team
+        - away_team: Name of the away team
+        - is_first_half: whether the bet is for 1st half
+        
+        Returns:
+        - Element or None if not found
+        """
+        try:
+            logger.info(f"Finding basketball handicap outcome for {outcome} {target_points} (1H={is_first_half})")
+            # Get the active market group div
+            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
+            
+            # Get all event-market divs and find the one with the proper handicap header
+            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
+            
+            target_headers = [
+                "1st Half Handicap - Rolling Middle Line",
+                "1st Half Handicap"
+            ] if is_first_half else [
+                "Handicap - Rolling Middle Line",
+                "Game Handicap",
+                "Handicap"
+            ]
+            
+            # Collect candidate handicap market divs in priority order and try each until found
+            candidate_market_divs = []
+            seen_ids = set()
+            for target in target_headers:
+                for market_div in event_markets:
+                    try:
+                        header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
+                        header_text = header.text.strip()
+                        logger.info(f"header----- {header_text}")
+                        if target.lower() in header_text.lower():
+                            # Use element id to avoid duplicates across headers
+                            el_id = id(market_div)
+                            if el_id not in seen_ids:
+                                seen_ids.add(el_id)
+                                candidate_market_divs.append(market_div)
+                                logger.info(f"Queued basketball handicap market: {header_text}")
+                    except Exception:
+                        continue
+            
+            if not candidate_market_divs:
+                logger.warning("No basketball handicap market found for the selected period")
+                return None, None
+            
+            target_cell = None
+            found_handicap = False
+            
+            for handicap_market_div in candidate_market_divs:
+                try:
+                    # Get all event-market__row divs within this handicap market
+                    rows = handicap_market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
+                    
+                    for row in rows:
+                        try:
+                            # Each row has 2 cells: first for home, second for away
+                            cells = row.find_elements(By.CSS_SELECTOR, ".event-market__cell")
+                            
+                            if len(cells) < 2:
+                                logger.warning(f"Expected 2 cells for basketball handicap row, found {len(cells)}")
+                                continue
+                            
+                            for cell in cells:
+                                try:
+                                    title_element = cell.find_element(By.CSS_SELECTOR, ".event-market__cell-title")
+                                    title_text = title_element.text.strip()
+                                    
+                                    import re
+                                    handicap_match = re.search(r'([+-]?\d+\.?\d*)', title_text)
+                                    if handicap_match:
+                                        cell_handicap = float(handicap_match.group(1))
+                                        
+                                        if abs(cell_handicap - float(target_points)) < 0.01:
+                                            is_home_cell = False
+                                            if home_team and home_team.lower() in title_text.lower():
+                                                is_home_cell = True
+                                            elif away_team and away_team.lower() in title_text.lower():
+                                                is_home_cell = False
+                                            else:
+                                                is_home_cell = (cells.index(cell) == 0)
+                                            
+                                            if (outcome == "home" and is_home_cell) or (outcome == "away" and not is_home_cell):
+                                                target_cell = cell
+                                                found_handicap = True
+                                                logger.info(f"Found basketball handicap {outcome} {target_points} in: {title_text}")
+                                                break
+                                except Exception:
+                                    continue
+                            
+                            if found_handicap and target_cell:
+                                break
+                        except Exception:
+                            continue
+                    
+                    if found_handicap and target_cell:
+                        break
+                except Exception:
+                    continue
+            
+            if not target_cell:
+                logger.warning(f"Could not find basketball handicap {outcome} {target_points} in any handicap market div")
+                return None, None
+            
+            # Get the button inside this cell
+            try:
+                button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
+                
+                # Verify odds
+                try:
+                    odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
+                    odds_text = odds_element.text.strip()
+                    logger.info(f"Found basketball handicap {outcome} {target_points} with odds: {float(odds_text)}")
+                    return button, float(odds_text)
+                except Exception as e:
+                    logger.error(f"Could not find odds in basketball handicap outcome: {e}")
+                    return None, None
+            except Exception as e:
+                logger.error(f"Error finding basketball handicap outcome: {e}")
+                return None, None
+                
+        except Exception as e:
+            logger.error(f"Error finding basketball handicap outcome: {e}")
+            return None, None
+
         
 
     def __place_bet_with_available_account(self, bet_data):
@@ -1981,7 +2323,8 @@ class BetEngine(WebsiteOpener):
                         bet_data["shaped_data"]["category"]["meta"].get("value"),
                         bet_data.get("is_first_half", False),
                         bet_data["shaped_data"]["game"]["home"],  # home_team from shaped_data
-                        bet_data["shaped_data"]["game"]["away"]   # away_team from shaped_data
+                        bet_data["shaped_data"]["game"]["away"],  # away_team from shaped_data
+                        bet_data.get("sport_id", 1)  # sport_id for basketball support
                     )
                     
                     if success:
@@ -2240,6 +2583,73 @@ class BetEngine(WebsiteOpener):
         except Exception as e:
             logger.error(f"Error fetching latest odds: {e}")
             return None
+
+    def __fetch_pinnacle_points_for_event(self, event_id, period_key):
+        """
+        Fetch available Pinnacle points for totals and spreads for a specific event/period.
+        Returns a dict with keys 'totals' and 'spreads'.
+        """
+        if not event_id:
+            logger.info("No event ID provided, cannot fetch available points")
+            return {"totals": [], "spreads": []}
+
+        pinnacle_api_host = os.getenv("PINNACLE_HOST")
+        if not pinnacle_api_host:
+            logger.info("Pinnacle Events API host not configured")
+            return {"totals": [], "spreads": []}
+
+        try:
+            url = f"{pinnacle_api_host}/events/{event_id}"
+            logger.info(f"Fetching available Pinnacle points from: {url}")
+
+            response = requests.get(url)
+            if response.status_code != 200:
+                logger.info(f"Failed to fetch available points: HTTP {response.status_code}")
+                return {"totals": [], "spreads": []}
+
+            event_data = response.json()
+            if not event_data or "data" not in event_data or not event_data["data"]:
+                logger.info("No data returned from Pinnacle API for available points")
+                return {"totals": [], "spreads": []}
+
+            if event_data["data"] is None or event_data["data"] == "null":
+                return {"totals": [], "spreads": []}
+
+            periods = event_data["data"].get("periods", {}) or {}
+            period = periods.get(period_key, {}) if periods else {}
+            if not period:
+                logger.info(f"No period data found for period key (points): {period_key}")
+                return {"totals": [], "spreads": []}
+
+            totals_points = []
+            spreads_points = []
+
+            totals = period.get("totals", {}) or {}
+            for _, total_data in totals.items():
+                try:
+                    p = float(total_data.get("points"))
+                    totals_points.append(p)
+                except (TypeError, ValueError):
+                    continue
+
+            spreads = period.get("spreads", {}) or {}
+            for _, spread_data in spreads.items():
+                try:
+                    p = float(spread_data.get("hdp"))
+                    spreads_points.append(p)
+                except (TypeError, ValueError):
+                    continue
+
+            # Deduplicate and sort
+            totals_points = sorted({round(p, 2) for p in totals_points})
+            spreads_points = sorted({round(p, 2) for p in spreads_points})
+
+            logger.info(f"Available Pinnacle points for period {period_key}: totals={totals_points}, spreads={spreads_points}")
+            return {"totals": totals_points, "spreads": spreads_points}
+
+        except Exception as e:
+            logger.error(f"Error fetching available Pinnacle points: {e}")
+            return {"totals": [], "spreads": []}
 
     def __power_method_devig(self, odds_list, max_iter=100, tol=1e-10):
         """
@@ -2583,6 +2993,9 @@ class BetEngine(WebsiteOpener):
         # Generate game ID for outcome tracking
         game_id = self.__generate_game_id(home_team, away_team)
         
+        # Identify if this event is basketball
+        is_basketball = (sport_id == "3" or sport_id == 3)
+        
         # Check both normal and first half markets
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
@@ -2625,15 +3038,31 @@ class BetEngine(WebsiteOpener):
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
             logger.info(f"\033[1m\033[1;36mChecking total markets{period_suffix} for {home_team} vs {away_team}\033[0m")
-            # logger.info(f"Checking total markets{period_suffix} for {home_team} vs {away_team}")
+            
+            # Strategy: skip 1st-half totals for basketball
+            if is_basketball and is_first_half:
+                logger.info("Skipping basketball 1st-half totals during EV scan")
+                continue
+
+            # Determine candidate total points from Pinnacle when basketball; fallback to defaults
+            if is_basketball:
+                event_id = shaped_data.get("eventId")
+                period_key = "num_1" if is_first_half else "num_0"
+                points_info = self.__fetch_pinnacle_points_for_event(event_id, period_key) or {}
+                candidate_points = points_info.get("totals") or []
+                logger.info(f"Pinnacle totals points for {home_team} vs {away_team} (1st Half: {is_first_half}): {candidate_points}")
+                if not candidate_points:
+                    logger.info("No Pinnacle totals points available; using default small totals")
+                    candidate_points = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
+            else:
+                candidate_points = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
             
             for outcome in ["over", "under"]:
                 # Skip if we already found the opposite outcome
                 if self.__should_skip_outcome(game_id, "total", outcome):
                     continue
-                    
-                # Try common total points: 0.5, 1.5, 2.5, 3.5, 4.5, 5.5
-                for points in [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]:
+                
+                for points in candidate_points:
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
                         event_details, "total", points, outcome, is_first_half, sport_id, home_team, away_team
                     )
@@ -2659,7 +3088,6 @@ class BetEngine(WebsiteOpener):
                             
                             # Track this found outcome to avoid checking opposite outcomes
                             self.__add_found_outcome(game_id, "total", outcome)
-                            # logger.info(f"Total{period_suffix} {outcome} {actual_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         # Check Asian Handicap markets (with mapping to Nairabet regular handicap)
         for is_first_half in [False, True]:
@@ -2672,10 +3100,24 @@ class BetEngine(WebsiteOpener):
                 if self.__should_skip_outcome(game_id, "spread", outcome):
                     continue
                     
-                # Try common handicap points: -2.5, -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5
-                for points in [-4.5, -3.5, -2.5, -1.5, 0.5, 1.5, 2.5, 3.5, 4.5]:
-                    # Map Pinnacle Asian Handicap to Nairabet regular handicap
-                    nairabet_points = self.__map_asian_handicap_to_nairabet(points)
+                # Determine handicap points from Pinnacle for basketball; fallback to defaults
+                if is_basketball:
+                    event_id = shaped_data.get("eventId")
+                    period_key = "num_1" if is_first_half else "num_0"
+                    points_info = self.__fetch_pinnacle_points_for_event(event_id, period_key) or {}
+                    base_points = points_info.get("spreads") or []
+                    logger.info(f"Pinnacle spread points for {home_team} vs {away_team} (1st Half: {is_first_half}): {base_points}")
+                    if not base_points:
+                        logger.info("No Pinnacle spread points available; using default scan points")
+                        base_points = [0.5, 1.5, 2.5, 3.5, 4.5]
+                    # Expand to both negative and positive to match Nairabet sides
+                    candidate_points = sorted({round(float(p), 2) for p in base_points} | {round(-float(p), 2) for p in base_points})
+                else:
+                    candidate_points = [-4.5, -3.5, -2.5, -1.5, 0.5, 1.5, 2.5, 3.5, 4.5]
+
+                for points in candidate_points:
+                    # Map Pinnacle Asian Handicap to Nairabet regular handicap (skip mapping for basketball)
+                    nairabet_points = points if is_basketball else self.__map_asian_handicap_to_nairabet(points)
                     logger.info(f"Nairabet points: {nairabet_points}")
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
                         event_details, "spread", nairabet_points, outcome, is_first_half, sport_id, home_team, away_team
@@ -2704,7 +3146,6 @@ class BetEngine(WebsiteOpener):
                             
                             # Track this found outcome to avoid checking opposite outcomes
                             self.__add_found_outcome(game_id, "spread", outcome)
-                            # logger.info(f"Handicap{period_suffix} {outcome} - Pinnacle {points} → Nairabet {nairabet_points}: EV {ev:.2f}% (odds: {odds}, stake: {stake:.2f})")
         
         # Check DNB markets (when handicap is 0)
         for is_first_half in [False, True]:
@@ -2887,7 +3328,7 @@ class BetEngine(WebsiteOpener):
         - Tuple of (bet_code, odds, adjusted_points)
         """
         # logger.info(f"sport id {sport_id}")
-        logger.info(f"Finding market for Game: {home_team} vs {away_team}: {line_type} - {outcome} - {points} - First Half: {is_first_half} - Sport: {'Basketball' if sport_id == 3 or sport_id == "3" else 'Soccer'}")
+        logger.info(f"Finding market for Game: {home_team} vs {away_team}: {line_type} - {outcome} - {points} - First Half: {is_first_half} - Sport: {'Basketball' if sport_id == 3 or sport_id == '3' else 'Soccer'}")
         
         # Handle new Nairabet API structure
         if "marketGroups" in event_details:
@@ -2924,19 +3365,31 @@ class BetEngine(WebsiteOpener):
         is_basketball = (sport_id == "3" or sport_id == 3)
         # logger.info(f"is basketball: {is_basketball}")
         
-        # Determine the correct market descriptions based on is_first_half
+        # Determine the correct market descriptions based on sport and is_first_half
         if is_first_half:
             # First half market descriptions - use actual market IDs from new API
-            moneyline_market = "FH1X2"  # First Half 1X2
-            total_market = "HTGOU_LS"   # Half time Goals - Under/Over
-            spread_market = "HC"        # Handicap (if available for first half)
-            dnb_market = "DNB"         # Draw No Bet (if available for first half)
+            if is_basketball:
+                moneyline_market = "FH1X2"  # First Half 1X2 for basketball
+                total_market = "HTGOU_LS"   # Half time Goals - Under/Over
+                spread_market = "SHC"      # Handicap for basketball
+                dnb_market = "DNB"         # Draw No Bet (if available for first half)
+            else:
+                moneyline_market = "FH1X2"  # First Half 1X2
+                total_market = "HTGOU_LS"   # Half time Goals - Under/Over
+                spread_market = "HC"        # Handicap (if available for first half)
+                dnb_market = "DNB"         # Draw No Bet (if available for first half)
         else:
             # Full match market descriptions - use actual market IDs from new API
-            moneyline_market = "1x2"
-            total_market = "TGOU"
-            spread_market = "HC"
-            dnb_market = "DNB"
+            if is_basketball:
+                moneyline_market = "1x2WOOT"  # Match Winner 3 way W/O Overtime for basketball
+                total_market = "TGOU"         # Total Goals - Over/Under for basketball
+                spread_market = "SHC"         # Handicap for basketball
+                dnb_market = "DNB"            # Draw No Bet
+            else:
+                moneyline_market = "1x2"      # Regular 1X2 for other sports
+                total_market = "TGOU"         # Total Goals - Over/Under
+                spread_market = "HC"          # Handicap
+                dnb_market = "DNB"            # Draw No Bet
         
         # logger.info(f"Looking for markets: moneyline='{moneyline_market}', total='{total_market}', spread='{spread_market}', dnb='{dnb_market}'")
 
@@ -3256,12 +3709,17 @@ class BetEngine(WebsiteOpener):
         - True if bet was placed/queued successfully
         """
         # Check if immediate bet placement is enabled
+        
         immediate_placement = self.__config.get("immediate_bet_placement", True)
         
         if immediate_placement:
             period_suffix = " (1st Half)" if is_first_half else ""
             logger.info(f"Placing Nairabet bet immediately: {line_type}{period_suffix} - {outcome} with odds {odds}")
             
+            # Extract sport_id from event_details
+            sport_id = event_details.get("sportId", "1")
+            
+            logger.info(f"Sport ID: {sport_id}")
             # Create bet data
             bet_data = {
                 "event_details": event_details,
@@ -3271,6 +3729,7 @@ class BetEngine(WebsiteOpener):
                 "shaped_data": modified_shaped_data,
                 "is_first_half": is_first_half,
                 "stake": stake,  # Include pre-calculated stake
+                "sport_id": sport_id,  # Include sport_id for basketball support
                 "timestamp": time.time()
             }
             
@@ -3519,7 +3978,7 @@ class BetEngine(WebsiteOpener):
             time.sleep(5)
             
             # Test the new selector system
-            market_element = self.__get_market_selector(line_type, outcome, points, is_first_half=False)
+            market_element = self.__get_market_selector(line_type, outcome, points, is_first_half=False, sport_id=sport_id)
             
             if market_element:
                 print("✅ CSS selector system found market element!")

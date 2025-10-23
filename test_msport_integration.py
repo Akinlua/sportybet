@@ -28,7 +28,7 @@ def setup_test_logging():
     
     # File handlers for different components
     test_handler = logging.FileHandler('logs/tests.log')
-    test_handler.setLevel(logging.info)
+    test_handler.setLevel(logging.INFO)
     test_handler.setFormatter(detailed_formatter)
     
     error_handler = logging.FileHandler('logs/errors.log')
@@ -37,7 +37,7 @@ def setup_test_logging():
     
     # Create loggers
     test_logger = logging.getLogger('tests')
-    test_logger.setLevel(logging.info)
+    test_logger.setLevel(logging.INFO)
     test_logger.addHandler(test_handler)
     test_logger.addHandler(console_handler)
     
@@ -104,8 +104,8 @@ def test_event_search():
     
     try:
         # Test search with sample teams
-        home_team = "Villarreal"
-        away_team = "Oviedo"
+        home_team = "Harem Spor Kulubu"
+        away_team = "Darussafaka"
         
         test_logger.info(f"Searching for event: {home_team} vs {away_team}")
         event_id = bet_engine.search_event(home_team, away_team)
@@ -207,8 +207,8 @@ def test_bet_placement():
         # Test data similar to what would come from Pinnacle
         test_shaped_data = {
             "game": {
-                "away": "Oviedo",
-                "home": "Villarreal"
+                "away": "Darussafaka",
+                "home": "Harem Spor Kulubu"
             },
             "category": {
                 "type": "money_line",
@@ -255,8 +255,8 @@ def test_multi_market_notification():
         # This will test the complete flow: search -> get details -> check all markets -> calculate EV -> place bets
         test_shaped_data = {
             "game": {
-                "away": "Oviedo",
-                "home": "Villarreal"
+                "away": "Darussafaka",
+                "home": "Harem Spor Kulubu"
             },
             "category": {
                 "type": "spread",  # This will be ignored by the new multi-market logic
@@ -266,7 +266,7 @@ def test_multi_market_notification():
                 }
             },
             "match_type": "oddsDrop",
-            "sportId": 1,
+            "sportId": 3,
             "starts": "1754719511000"  # Add start time for unique game ID
         }
         
@@ -307,13 +307,13 @@ def test_url_generation():
     try:
         # Sample event details
         event_details = {
-            "homeTeam": "Villarreal",
-            "awayTeam": "Oviedo",
+            "homeTeam": "Harem Spor Kulubu",
+            "awayTeam": "Darussafaka",
             "eventId": "sr:match:58052743"
         }
         
         url = bet_engine.generate_msport_bet_url(event_details)
-        expected_pattern = "Villarreal/Oviedo/sr:match:58052743"
+        expected_pattern = "Harem Spor Kulubu/Darussafaka/sr:match:58052743"
         
         print(f"Generated URL: {url}")
         

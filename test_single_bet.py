@@ -34,11 +34,11 @@ def create_quick_alert(home_team, away_team, line_type, outcome, points=None, is
         "away": away_team,
         "lineType": line_type,
         "outcome": outcome,
-        "sportId": 1,  # Soccer
+        "sportId": 3,  # Soccer
         "type": "prematch",
         "periodNumber": "1" if is_first_half else "0",
-        "eventId": 15465549,
-        "starts": 1756651500000
+        "eventId": 16307599,
+        "starts": 1761347100000
     }
     
     if points is not None:
@@ -74,27 +74,27 @@ def test_quick_scenarios():
     scenarios = {
         "1": {
             "name": "Moneyline Home Win",
-            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "moneyline", "home")
+            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "moneyline", "away")
         },
         "2": {
-            "name": "Over 3.5 Goals",
-            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "total", "over", points=3.5)
+            "name": "Over 229.5 Goals",
+            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "total", "over", points=229.5)
         },
         "3": {
-            "name": "Handicap +2",
-            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "spread", "home", points=2)
+            "name": "Handicap 7.5",
+            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "spread", "away", points=7.5)
         },
         "4": {
             "name": "First Half Under 1.5",
-            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "total", "under", points=1.5, is_first_half=True)
+            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "total", "under", points=1.5, is_first_half=True)
         },
         "5": {
             "name": "DNB (Zero Handicap)",
-            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "spread", "home", points=0.0)
+            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "spread", "home", points=0.0) 
         },
         "6": {
-            "name": "Asian Handicap -2.5 (maps to -2)",
-            "alert": create_quick_alert("NAC Breda", "AZ Alkmaar", "spread", "home", points=-2.5)
+            "name": "Asian Handicap -5.5",
+            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "spread", "home", points=-5.5)
         }
     }
     
@@ -105,6 +105,7 @@ def run_single_test(bet_engine, alert_data, scenario_name):
     logger.info(f"\n🎯 Testing: {scenario_name}")
     logger.info(f"Match: {alert_data['home']} vs {alert_data['away']}")
     logger.info(f"Bet: {alert_data['lineType']} - {alert_data['outcome']}")
+    logger.info(f"SportId: {alert_data['sportId']}")
     if alert_data.get('points'):
         logger.info(f"Points: {alert_data['points']}")
     if alert_data.get('periodNumber') == "1":
@@ -120,11 +121,11 @@ def run_single_test(bet_engine, alert_data, scenario_name):
             "away": alert_data['away'],
             "event_id": alert_data.get('eventId', 15446589),
             "starts": alert_data.get('starts', 1756321200000),
-            "sport_id": alert_data.get('sportId', 1)
+            "sportId": alert_data.get('sportId', 3)
         }
         
         # Mock odds (you can adjust these test values)
-        test_odds = 1.69  # Default test odds
+        test_odds = 1.91  # Default test odds
         
         # Extract bet parameters
         line_type = alert_data['lineType']
