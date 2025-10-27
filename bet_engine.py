@@ -1074,7 +1074,21 @@ class BetEngine(WebsiteOpener):
                 event_details["awayTeam"] = away_team
                 event_details["eventId"] = event_id
                 
+                # Normalize sportId to numeric codes: SOCCER->1, BASKETBALL->3
+                try:
+                    _orig_sport_id = event_details.get("sportId")
+                    _sport_str = str(_orig_sport_id).upper() if _orig_sport_id is not None else ""
+                    if _sport_str == "SOCCER":
+                        event_details["sportId"] = 1
+                    elif _sport_str == "BASKETBALL":
+                        event_details["sportId"] = 3
+                    if event_details.get("sportId") != _orig_sport_id:
+                        logger.info(f"Normalized sportId: {_orig_sport_id} -> {event_details['sportId']}")
+                except Exception as e:
+                    logger.warning(f"Failed to normalize sportId: {e}")
+                
                 logger.info(f"Event details retrieved: {home_team} vs {away_team}")
+                logger.info(f"Event: {event_details}")
                 logger.info(f"Event ID: {event_id}")
                 logger.info(f"Start time: {event_details.get('startTime')}")
                 logger.info(f"Competition: {event_details.get('competitionName')}")
