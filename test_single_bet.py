@@ -34,11 +34,11 @@ def create_quick_alert(home_team, away_team, line_type, outcome, points=None, is
         "away": away_team,
         "lineType": line_type,
         "outcome": outcome,
-        "sportId": 3,  # Soccer
+        "sportId": 2,  # Basketball (Sporty: sr:sport:2)
         "type": "prematch",
         "periodNumber": "1" if is_first_half else "0",
-        "eventId": 16307599,
-        "starts": 1761347100000
+        "eventId": "sr:match:62095766",
+        "starts": 1763148600000
     }
     
     if points is not None:
@@ -72,29 +72,151 @@ def shape_alert_data(alert):
 def test_quick_scenarios():
     """Pre-defined quick test scenarios"""
     scenarios = {
+        # "1": {
+        #     "name": "Moneyline Home Win",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "moneyline", "home")
+        # },
+        # "2": {
+        #     "name": "Moneyline Home Draw",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "moneyline", "draw")
+        # },
+        # "3": {
+        #     "name": "Moneyline Home away",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "moneyline", "away")
+        # },
+        # "4": {
+        #     "name": "Over 0.5 Goals",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "total", "over", points=0.5)
+        # },
+        # "5": {
+        #     "name": "Under 0.5 Goals",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "total", "under", points=0.5)
+        # },
+        # "6": {
+        #     "name": "Asian Handicap 1.5",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "home", points=1.5)
+        # },
+        #  "7": {
+        #     "name": "Asian Handicap -1.5",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "away", points=-1.5)
+        # },
+        # "8": {
+        #     "name": "DNB (Zero Handicap)",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "home", points=0.0) 
+        # },
+        # "9": {
+        #     "name": "DNB (Zero Handicap)",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "away", points=0.0) 
+        # },
+        # "10": {
+        #     "name": "First half Moneyline Home Win",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "moneyline", "home", is_first_half=True)
+        # },
+        # "11": {
+        #     "name": "First half Moneyline Home Draw",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "moneyline", "draw", is_first_half=True)
+        # },
+        # "12": {
+        #     "name": "First half Moneyline Home away",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "moneyline", "away", is_first_half=True)
+        # },
+        # "13": {
+        #     "name": "First half Over 1.5 Goals",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "total", "over", points=1.5, is_first_half=True)
+        # },
+        # "14": {
+        #     "name": "First half Under 1.5 Goals",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "total", "under", points=1.5, is_first_half=True)
+        # },
+        # "15": {
+        #     "name": "First half Asian Handicap 1.5",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "home", points=1.5, is_first_half=True)
+        # },
+        # "16": {
+        #     "name": "First half Asian Handicap -1.5",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "away", points=-1.5, is_first_half=True)
+        # },
+        # "17": {
+        #     "name": "First half DNB (Zero Handicap)",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "home", points=0.0, is_first_half=True) 
+        # },
+        # "18": {
+        #     "name": "First half DNB (Zero Handicap)",
+        #     "alert": create_quick_alert("Leeds United", "Aston Villa", "spread", "away", points=0.0, is_first_half=True) 
+        # }
+
+
         "1": {
             "name": "Moneyline Home Win",
-            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "moneyline", "away")
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "moneyline", "home")
         },
         "2": {
-            "name": "Over 229.5 Goals",
-            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "total", "over", points=229.5)
+            "name": "Moneyline Home Draw",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "moneyline", "draw")
         },
         "3": {
-            "name": "Handicap 7.5",
-            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "spread", "away", points=7.5)
+            "name": "Moneyline Home away",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "moneyline", "away")
         },
         "4": {
-            "name": "First Half Under 1.5",
-            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "total", "under", points=1.5, is_first_half=True)
+            "name": "Over 158.5 Goals",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "total", "over", points=158.5)  
         },
         "5": {
-            "name": "DNB (Zero Handicap)",
-            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "spread", "home", points=0.0) 
+            "name": "Under 161.5 Goals",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "total", "under", points=161.5)  
         },
-        "6": {
-            "name": "Asian Handicap -5.5",
-            "alert": create_quick_alert("Orlando Magic", "Atlanta Hawks", "spread", "home", points=-5.5)
+        # "6": {
+        #     "name": "Asian Handicap 1.5",
+        #     "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "home", points=1.5)
+        # },
+        #  "7": {
+        #     "name": "Asian Handicap -1.5",
+        #     "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "away", points=-1.5)
+        # },
+        "8": {
+            "name": "DNB (Zero Handicap)",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "home", points=0.0) 
+        },
+        "9": {
+            "name": "DNB (Zero Handicap)",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "away", points=0.0) 
+        },
+        "10": {
+            "name": "First half Moneyline Home Win",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "moneyline", "home", is_first_half=True)
+        },
+        "11": {
+            "name": "First half Moneyline Home Draw",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "moneyline", "draw", is_first_half=True)
+        },
+        "12": {
+            "name": "First half Moneyline Home away",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "moneyline", "away", is_first_half=True)
+        },
+        "13": {
+            "name": "First half Over 78.5 Goals",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "total", "over", points=78.5, is_first_half=True)
+        },
+        "14": {
+            "name": "First half Under 78.5 Goals",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "total", "under", points=78.5, is_first_half=True)
+        },
+        "15": {
+            "name": "First half Asian Handicap 3.5",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "away", points=3.5, is_first_half=True)
+        },
+        "16": {
+            "name": "First half Asian Handicap -3.5",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "home", points=-3.5, is_first_half=True)
+        },
+        "17": {
+            "name": "First half DNB (Zero Handicap)",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "home", points=0.0, is_first_half=True) 
+        },
+        "18": {
+            "name": "First half DNB (Zero Handicap)",
+            "alert": create_quick_alert("FC Barcelona", "Virtus Bologna", "spread", "away", points=0.0, is_first_half=True) 
         }
     }
     
@@ -105,7 +227,13 @@ def run_single_test(bet_engine, alert_data, scenario_name):
     logger.info(f"\n🎯 Testing: {scenario_name}")
     logger.info(f"Match: {alert_data['home']} vs {alert_data['away']}")
     logger.info(f"Bet: {alert_data['lineType']} - {alert_data['outcome']}")
-    logger.info(f"SportId: {alert_data['sportId']}")
+    sport_id = alert_data.get('sportId')
+    sport_info = (
+        {"id": "sr:sport:1", "name": "Football"} if sport_id in (1, "1", "sr:sport:1") else
+        {"id": "sr:sport:2", "name": "Basketball"} if sport_id in (2, "2", "sr:sport:2") else
+        {"id": str(sport_id), "name": ""}
+    )
+    logger.info(f"Sport: {sport_info['name']} ({sport_info['id']})")
     if alert_data.get('points'):
         logger.info(f"Points: {alert_data['points']}")
     if alert_data.get('periodNumber') == "1":
@@ -117,15 +245,35 @@ def run_single_test(bet_engine, alert_data, scenario_name):
         
         # Create mock event details (since we're bypassing Pinnacle lookup)
         event_details = {
-            "home": alert_data['home'],
-            "away": alert_data['away'],
-            "event_id": alert_data.get('eventId', 15446589),
-            "starts": alert_data.get('starts', 1756321200000),
-            "sportId": alert_data.get('sportId', 3)
+            # Sporty-style event details
+            "eventId": alert_data.get('eventId', "sr:match:15446589"),
+            "estimateStartTime": alert_data.get('starts', 1756321200000),
+            "status": 0,
+            "homeTeamName": alert_data['home'],
+            "awayTeamName": alert_data['away'],
+            # Provide both forms to satisfy engine getters
+            "homeTeam": alert_data['home'],
+            "awayTeam": alert_data['away'],
+            "sport": {
+                "id": "sr:sport:2",
+                "name": "Basketball",
+                "category": {
+                    "id": "sr:category:103",
+                    "name": "International",
+                    "tournament": {
+                        "id": "sr:tournament:138",
+                        "name": "Euroleague"
+                    }
+                }
+            },
+            "sportId": 2,
+            # "sport": sport_info,
+            # Markets not needed for direct placement, but kept for completeness
+            "markets": []
         }
         
         # Mock odds (you can adjust these test values)
-        test_odds = 1.91  # Default test odds
+        test_odds = 1.44  # Default test odds
         
         # Extract bet parameters
         line_type = alert_data['lineType']

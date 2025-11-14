@@ -9,6 +9,7 @@ import threading
 import queue
 import logging
 import asyncio
+from urllib.parse import urlencode, quote
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
@@ -85,7 +86,7 @@ os.makedirs('logs', exist_ok=True)
 # bet_logger, odds_logger, auth_logger, error_logger = setup_logging()
 
 # Set up main logger for console output
-logger = logging.getLogger('nairabet_betting')
+logger = logging.getLogger('sporty_betting')
 logger.setLevel(logging.INFO)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
@@ -95,7 +96,7 @@ logger.addHandler(console_handler)
 
 class BetAccount:
     """
-    Represents a single Nairabet account with its own login credentials and cookie jar
+    Represents a single Sportybet account with its own login credentials and cookie jar
     """
     def __init__(self, username, password, active=True, max_concurrent_bets=3, min_balance=100, proxy=None):
         self.username = username
@@ -145,7 +146,7 @@ class BetAccount:
 
 class BetEngine(WebsiteOpener):
     """
-    Handles the bet placement process on Nairabet, including:
+    Handles the bet placement process on sportybet, including:
     - Searching for matches
     - Finding the right market
     - Calculating EV
@@ -153,8 +154,8 @@ class BetEngine(WebsiteOpener):
     """
     
     def __init__(self, headless=os.getenv("ENVIRONMENT")=="production", 
-                 bet_host=os.getenv("NAIRABET_HOST", "https://www.nairabet.com"), 
-                 bet_api_host=os.getenv("NAIRABET_API_HOST", "https://sports-api.nairabet.com"),
+                 bet_host=os.getenv("SPORTY_HOST", "https://www.sportybet.com"), 
+                 bet_api_host=os.getenv("SPORTY_API_HOST", "https://www.sportybet.com/api/ng"),
                  min_ev=float(os.getenv("MIN_EV", "0")),
                  config_file="config.json",
                  skip_initial_login=False):
@@ -163,8 +164,8 @@ class BetEngine(WebsiteOpener):
         
         Parameters:
         - headless: Whether to run browser in headless mode
-        - bet_host: Nairabet betting website host
-        - bet_api_host: Nairabet API host for searching events
+        - bet_host: sportybet betting website host
+        - bet_api_host: sportybet API host for searching events
         - min_ev: Minimum expected value threshold for placing bets
         - config_file: Path to configuration file
         - skip_initial_login: Whether to skip initial login setup
@@ -477,8 +478,8 @@ class BetEngine(WebsiteOpener):
     def __setup_accounts(self):
         """Initialize bet accounts from config"""
         # First, set up at least one account from environment variables if available
-        env_username = os.getenv("NAIRABET_USERNAME")
-        env_password = os.getenv("NAIRABET_PASSWORD")
+        env_username = os.getenv("SPORTY_USERNAME")
+        env_password = os.getenv("SPORTY_PASSWORD")
         
         if env_username and env_password:
             self.__accounts.append(BetAccount(env_username, env_password))
@@ -508,7 +509,7 @@ class BetEngine(WebsiteOpener):
                 
         # Ensure we have at least one account
         if not self.__accounts:
-            raise ValueError("No betting accounts configured. Please set NAIRABET_USERNAME and NAIRABET_PASSWORD environment variables or configure accounts in config.json")
+            raise ValueError("No betting accounts configured. Please set sportybet_USERNAME and sportybet_PASSWORD environment variables or configure accounts in config.json")
             
         logger.info(f"Set up {len(self.__accounts)} betting accounts")
         
@@ -561,7 +562,7 @@ class BetEngine(WebsiteOpener):
             time.sleep(0.1)
 
     def __do_login(self):
-        """Log in to Nairabet website with the first account (for search functionality)"""
+        """Log in to sportybet website with the first account (for search functionality)"""
         if self.__accounts:
             self.__do_login_for_account(self.__accounts[0])
         else:
@@ -590,7 +591,7 @@ class BetEngine(WebsiteOpener):
             
     def __fetch_account_balance(self, account):
         """
-        Fetch account balance from Nairabet API after login
+        Fetch account balance from sportybet API after login
         
         Parameters:
         - account: BetAccount instance with valid cookies
@@ -603,7 +604,8 @@ class BetEngine(WebsiteOpener):
                 logger.warning(f"No cookies available for account {account.username}, cannot fetch balance")
                 return 0
                 
-            balance_url = "https://users-api.nairabet.com/v2/users/me/balance?country=NG&group=g3&platform=desktop&locale=en"
+            ts = str(int(time.time() * 1000))
+            balance_url = f"https://www.sportybet.com/api/ng/pocket/v1/finAccs/finAcc/userBal/NGN?_t={ts}"
             
             # Convert cookie jar to requests format
             cookies = {}
@@ -615,26 +617,38 @@ class BetEngine(WebsiteOpener):
             headers = {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                 "Accept": "application/json",
-                "Referer": "https://www.nairabet.com/",
-                "x-sah-device": "5f40d3154db72f213ffd1fe7f7ad1cb8"
+                "Referer": "https://www.sportybet.com/ng/",
+                "Origin": "https://www.sportybet.com"
             }
             
             response = requests.get(balance_url, headers=headers, cookies=cookies, proxies=account.get_proxies())
             
             if response.status_code == 200:
                 balance_data = response.json()
-                
-                # Support both top-level and nested under 'data'
                 payload = balance_data.get("data", balance_data) if isinstance(balance_data, dict) else {}
-                
-                if isinstance(payload, dict) and ("withdrawable" in payload or "total" in payload):
-                    withdrawable = float(payload.get("withdrawable", 0.0))
-                    total = float(payload.get("total", 0.0))
-                    logger.info(f"Account {account.username} balance: withdrawable={withdrawable:.2f}, total={total:.2f}")
-                    return total
-                else:
-                    logger.warning(f"Invalid balance response for account {account.username}: {balance_data}")
-                    return 0
+                if isinstance(payload, dict):
+                    biz_code = None
+                    try:
+                        biz_code = float(balance_data.get("bizCode")) if isinstance(balance_data, dict) else None
+                    except Exception:
+                        biz_code = None
+                    if "avlBal" in payload and biz_code and biz_code > 0:
+                        try:
+                            amt = float(payload.get("avlBal")) / biz_code
+                            logger.info(f"Account {account.username} balance (avlBal/bizCode): {amt:.2f}")
+                            return amt
+                        except Exception:
+                            pass
+                    for key in ("balance", "userBal", "availableBalance", "withdrawable", "total"):
+                        if key in payload and isinstance(payload.get(key), (int, float, str)):
+                            try:
+                                amt = float(payload.get(key))
+                                logger.info(f"Account {account.username} balance ({key}): {amt:.2f}")
+                                return amt
+                            except Exception:
+                                continue
+                logger.warning(f"Invalid balance response for account {account.username}: {balance_data}")
+                return 0
             else:
                 logger.error(f"Failed to fetch balance for account {account.username}: HTTP {response.status_code}")
                 return 0
@@ -644,14 +658,14 @@ class BetEngine(WebsiteOpener):
             return 0
 
     def __do_login_for_account(self, account, _retry=False):
-        """Log in to Nairabet website with a specific account using selenium with retry mechanism"""
+        """Log in to sportybet website with a specific account using selenium with retry mechanism"""
         max_retries = 2
         current_attempt = 2 if _retry else 1
         
         logger.info(f"🔄 Login attempt {current_attempt}/{max_retries} for account: {account.username}")
         
         if not account.username or not account.password:
-            raise ValueError("Nairabet username or password not found for account")
+            raise ValueError("sportybet username or password not found for account")
         
         try:
             # Initialize browser with account-specific proxy
@@ -669,7 +683,7 @@ class BetEngine(WebsiteOpener):
             # Check if already logged in first by presence of header 'Account' button
             try:
                 WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, "//button[contains(@class,'header-button') and contains(@class,'header-button--none')][.//span[contains(@class,'header-button__label') and normalize-space()='Account']]"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m-list"))
                 )
                 logger.info(f"Already logged in for account: {account.username}")
                 # Get cookies from selenium
@@ -692,7 +706,7 @@ class BetEngine(WebsiteOpener):
                 logger.warning(f"Error checking login status: {e}")
                 # Continue with login process
             
-            # Navigate to Nairabet login page
+            # Navigate to sportybet login page
             login_url = f"{self.__bet_host}"
             try:
                 self.driver.get(login_url)
@@ -708,33 +722,33 @@ class BetEngine(WebsiteOpener):
                     raise
             
             # Open login modal from header
-            try:
-                header_login_btn = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@class,'header-button')][.//span[contains(@class,'header-button__label') and normalize-space()='Login']]"))
-                )
-                header_login_btn.click()
-                logger.info("Opened login modal")
+            # try:
+            #     header_login_btn = WebDriverWait(self.driver, 10).until(
+            #         EC.element_to_be_clickable((By.XPATH, "//button[contains(@class,'header-button')][.//span[contains(@class,'header-button__label') and normalize-space()='Login']]"))
+            #     )
+            #     header_login_btn.click()
+            #     logger.info("Opened login modal")
                 
-                # Handle notification popup that may appear after clicking login
-                # try:
-                #     # Wait for notification popup and click "Maybe Later"
-                #     maybe_later_btn = WebDriverWait(self.driver, 5).until(
-                #         EC.element_to_be_clickable((By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel"))
-                #     )
-                #     maybe_later_btn.click()
-                #     logger.info("Clicked 'Maybe Later' on notification popup")
-                #     time.sleep(1)  # Brief wait for popup to close
-                # except TimeoutException:
-                #     logger.info("No notification popup found, continuing with login")
-                # except Exception as e:
-                #     logger.warning(f"Could not handle notification popup: {e}")
+            #     # Handle notification popup that may appear after clicking login
+            #     # try:
+            #     #     # Wait for notification popup and click "Maybe Later"
+            #     #     maybe_later_btn = WebDriverWait(self.driver, 5).until(
+            #     #         EC.element_to_be_clickable((By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel"))
+            #     #     )
+            #     #     maybe_later_btn.click()
+            #     #     logger.info("Clicked 'Maybe Later' on notification popup")
+            #     #     time.sleep(1)  # Brief wait for popup to close
+            #     # except TimeoutException:
+            #     #     logger.info("No notification popup found, continuing with login")
+            #     # except Exception as e:
+            #     #     logger.warning(f"Could not handle notification popup: {e}")
                     
-            except Exception as e:
-                logger.error(f"Could not open login modal: {e}")
+            # except Exception as e:
+            #     logger.error(f"Could not open login modal: {e}")
             
-            # Find username/phone/email input
+            # Find phone input
             phone_input = WebDriverWait(self.driver, 60).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.skeleton-container.overlay-skeleton input[name='login']"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phone']"))
             )
             phone_input.clear()
             phone_input.send_keys(account.username)
@@ -742,18 +756,19 @@ class BetEngine(WebsiteOpener):
             
             # Find password input
             password_input = WebDriverWait(self.driver, 60).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.skeleton-container.overlay-skeleton input[name='password']"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='psd']"))
             )
             password_input.clear()
             password_input.send_keys(account.password)
             logger.info(f"🔑 Entered password")
             
-            # Find and click login button inside the modal
+            # Find and click login button
             login_button = WebDriverWait(self.driver, 60).until(
-                EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'skeleton-container') and contains(@class,'overlay-skeleton')]//button[contains(@class,'form-button') and contains(@class,'form-button--primary')]"))
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='logIn'].m-btn.m-btn-login"))
             )
             login_button.click()
             logger.info(f"🚀 Clicked login button")
+            # time.sleep(10)
             
             # Take screenshot for debugging
             # try:
@@ -767,7 +782,7 @@ class BetEngine(WebsiteOpener):
             # Verify login success by presence of header 'Account' button
             try:
                 WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.XPATH, "//button[contains(@class,'header-button') and contains(@class,'header-button--none')][.//span[contains(@class,'header-button__label') and normalize-space()='Account']]"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m-list"))
                 )
                 logger.info(f"Login successful for account: {account.username}")
                 
@@ -821,9 +836,25 @@ class BetEngine(WebsiteOpener):
             # Final failure - don't sleep for 1000 seconds, just raise the exception
             raise
 
+    def __normalize_team(self, name):
+        s = str(name or "").lower()
+        s = re.sub(r"\(.*?\)", "", s)
+        s = re.sub(r"[^a-z0-9\s]", "", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def __similar(self, a, b):
+        ta = set(self.__normalize_team(a).split())
+        tb = set(self.__normalize_team(b).split())
+        if not ta or not tb:
+            return 0.0
+        inter = len(ta & tb)
+        union = len(ta | tb)
+        return inter / union
+
     def __search_event(self, home_team, away_team, pinnacle_start_time=None):
         """
-        Search for an event on Nairabet using team names and match start time
+        Search for an event on sportybet using team names and match start time
         
         Parameters:
         - home_team: Home team name
@@ -838,11 +869,12 @@ class BetEngine(WebsiteOpener):
             pinnacle_datetime = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(pinnacle_start_time)/1000))
             logger.info(f"Pinnacle start time: {pinnacle_datetime} (GMT)")
         
-        # Try different search strategies
+        q_home = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", home_team)).strip().lower()
+        q_away = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", away_team)).strip().lower()
         search_strategies = [
-            f"{home_team.lower()} {away_team.lower()}",  # Full match name
-            home_team.lower(),                   # Home team only
-            away_team.lower(),                   # Away team only
+            f"{q_home} {q_away}",
+            q_home,
+            q_away,
         ]
         
         # Add individual words from team names as search strategies
@@ -864,21 +896,19 @@ class BetEngine(WebsiteOpener):
             # logger.info(f"Trying search term: {search_term}")
             
             try:
-                # Nairabet sports API search endpoint
-                search_url = "https://sports-api.nairabet.com/v2/events/search"
+                search_url = f"{self.__bet_api_host}/factsCenter/event/firstSearch"
                 params = {
-                    'country': 'NG',
-                    'group': 'g3',
-                    'platform': 'desktop',
-                    'locale': 'en',
-                    'text': search_term
+                    'keyword': search_term,
+                    'offset': '0',
+                    'pageSize': '20',
+                    'withOneUpMarket': 'true',
+                    'withTwoUpMarket': 'true',
+                    '_t': str(int(time.time()*1000))
                 }
-            
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                     "Accept": "application/json",
-                    "Referer": "https://www.nairabet.com/",
-                    "x-sah-device": "5f40d3154db72f213ffd1fe7f7ad1cb8"
+                    "Referer": self.__bet_host,
                 }
                 
                 # Get proxy if available
@@ -892,7 +922,7 @@ class BetEngine(WebsiteOpener):
                             break
                 
                 # logger.info(f"Searching with URL: {search_url} and params: {params}")
-                response = requests.get(search_url, params=params, headers=headers, proxies=proxies)
+                response = requests.get(search_url, params=params, headers=headers, proxies=proxies, timeout=12)
                 
                 # logger.info(f"Response status: {response.status_code}")
                 # print(f"Response content: {response.text[:500]}...")
@@ -907,104 +937,47 @@ class BetEngine(WebsiteOpener):
                 
                     # Updated to handle the new API response structure
                     if "data" in search_results and search_results["data"]:
-                        events = search_results["data"]
-                        for event in events:
-                            # Extract team names from new response format
-                            event_names = event.get("eventNames", [])
-                            
-                            # Handle both array format and single string format
-                            if isinstance(event_names, list) and len(event_names) >= 2:
-                                # Array format: ["Team A", "Team B"]
-                                home_team_name = event_names[0].lower()
-                                away_team_name = event_names[1].lower()
-                            elif isinstance(event_names, list) and len(event_names) == 1:
-                                # Single string format: ["Team A v Team B"]
-                                team_string = event_names[0]
-                                if " v " in team_string:
-                                    parts = team_string.split(" v ")
-                                    if len(parts) == 2:
-                                        home_team_name = parts[0].strip().lower()
-                                        away_team_name = parts[1].strip().lower()
-                                    else:
-                                        continue
-                                else:
-                                    continue
-                            else:
-                                continue
-                            
-                            event_id = event.get("id")
+                        payload = search_results["data"]
+                        candidates = []
+                        if isinstance(payload, dict):
+                            for key in ["preMatch"]:
+                                v = payload.get(key)
+                                if isinstance(v, list):
+                                    candidates.extend(v)
+                        elif isinstance(payload, list):
+                            candidates.extend(payload)
+                        for event in candidates:
+                            home_team_name = event.get("homeTeamName") or event.get("home") or ""
+                            away_team_name = event.get("awayTeamName") or event.get("away") or ""
+                            event_id = event.get("eventId") or event.get("id")
                             
                             if not event_id:
                                 continue
                                 
-                            # Skip events with variant indicators that don't exist in the original team names
-                            event_name = f"{home_team_name} vs {away_team_name}"
-                            should_skip = False
-                            for indicator in variant_indicators:
-                                if (indicator in event_name and 
-                                    indicator not in home_team.lower() and 
-                                    indicator not in away_team.lower()):
-                                    should_skip = True
-                                    break
-                                
-                            if should_skip:
-                                logger.info(f"Skipping variant team: {event_name}")
-                                continue
-                                
-                            # Calculate match score based on word matching
-                            match_score = 0
-                            home_words = set(word.lower() for word in home_team.lower().split() if len(word) > 1)
-                            away_words = set(word.lower() for word in away_team.lower().split() if len(word) > 1)
-                            event_home_words = set(word.lower() for word in home_team_name.split() if len(word) > 1)
-                            event_away_words = set(word.lower() for word in away_team_name.split() if len(word) > 1)
-                            
-                            home_match_count = len(home_words.intersection(event_home_words))
-                            away_match_count = len(away_words.intersection(event_away_words))
-                            
-                            # Perfect match check
-                            if (home_team.lower() in home_team_name and away_team.lower() in away_team_name):
-                                match_score += 10
-                                    
-                            # At least one word from each team must match
-                            if home_match_count > 0 and away_match_count > 0:
-                                match_score += home_match_count + away_match_count
-                            else:
-                                continue
-                            
-                                
-                            # Check start time if available
-                            time_match_score = 0
-                            if pinnacle_start_time and "startTime" in event:
-                                logger.info(f"Pinnacle start time: {pinnacle_start_time}")
-                                logger.info(f"Nairabet start time: {event['startTime']}")
-                                nairabet_start_time = event["startTime"]
-                                try:
-                                    # Both Pinnacle and Nairabet times are in milliseconds (Unix timestamp)
-                                    # No need for timezone conversion, just compare the raw millisecond values
-                                    time_diff_hours = abs(int(pinnacle_start_time) - int(nairabet_start_time)) / (1000 * 60 * 60)
-                                    
-                                    if time_diff_hours <= 1.0833:  # Within 1 hour and 5 minutes
-                                        time_match_score = 10
-                                        match_score += time_match_score
-                                        # logger.info(f"Time match found: Pinnacle={pinnacle_start_time}, Nairabet={nairabet_start_time}, diff={time_diff_hours:.2f}h")
-                                    else:
-                                        logger.info(f"Time difference: {time_diff_hours:.2f} hours, skipping event - not the right game")
-                                        continue  # Skip this event entirely
-                                            
-                                except Exception as e:
-                                    logger.error(f"Error parsing time: {e}")
-                                    continue  # Skip this event if time parsing fails
-                                
-                            # Add to potential matches if score is positive
-                            if match_score > 0:
+                            hn = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", str(home_team_name))).strip().lower()
+                            an = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", str(away_team_name))).strip().lower()
+                            cases = [
+                                (hn == q_home and self.__similar(a=an, b=q_away) >= 0.5),
+                                (hn == q_away and self.__similar(a=an, b=q_home) >= 0.5),
+                                (an == q_home and self.__similar(a=hn, b=q_away) >= 0.5),
+                                (an == q_away and self.__similar(a=hn, b=q_home) >= 0.5),
+                            ]
+                            if any(cases):
+                                match_score = 100
+                                est = event.get("estimateStartTime") or event.get("startTime")
+                                if pinnacle_start_time and est:
+                                    try:
+                                        diff_h = abs(int(pinnacle_start_time) - int(est)) / (1000 * 60 * 60)
+                                        if diff_h > 2:
+                                            continue
+                                        match_score += 10
+                                    except Exception:
+                                        pass
                                 potential_matches.append({
-                                "event_name": f"{home_team_name} vs {away_team_name}",
-                                "event_id": event_id,
-                                "score": match_score,
-                                "strategy": search_term,
-                                "home_team": home_team_name,
-                                "away_team": away_team_name
-                            })
+                                    "event_name": f"{home_team_name} vs {away_team_name}",
+                                    "event_id": event_id,
+                                    "score": match_score,
+                                })
                             # logger.info(f"Potential match: {event_name} (Score: {match_score})")
                     else:
                         logger.info(f"No data found in search response for term: {search_term}")
@@ -1024,28 +997,24 @@ class BetEngine(WebsiteOpener):
             logger.info(f"Best match: {best_match['event_name']} (ID: {best_match['event_id']}, Score: {best_match['score']})")
             return best_match["event_id"]
         
-        logger.warning("No matching event found on Nairabet")
+        logger.warning("No matching event found on Sporty")
         return None
 
     def __get_event_details(self, event_id):
-        """Get detailed information about an event from Nairabet"""
+        """Get detailed information about an event from Sporty"""
         logger.info(f"Getting details for event ID: {event_id}")
         
         try:
-            # Nairabet sports API event details endpoint
-            details_url = f"https://sports-api.nairabet.com/v2/events/{event_id}"
+            details_url = f"{self.__bet_api_host}/factsCenter/event"
             params = {
-                'country': 'NG',
-                'group': 'g3',
-                'platform': 'desktop',
-                'locale': 'en'
+                'eventId': event_id,
+                'productId': '3',
+                '_t': str(int(time.time()*1000))
             }
-        
             headers = {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                 "Accept": "application/json",
-                "Referer": "https://www.nairabet.com/",
-                "x-sah-device": "5f40d3154db72f213ffd1fe7f7ad1cb8"
+                "Referer": self.__bet_host,
             }
             
             # Get proxy if available
@@ -1061,42 +1030,25 @@ class BetEngine(WebsiteOpener):
             response = requests.get(details_url, params=params, headers=headers, proxies=proxies, timeout=10)
             response.raise_for_status()
             
-            event_details = response.json()
-            
-            # Extract team names from the new response format
-            event_names = event_details.get("eventNames", [])
-            if len(event_names) >= 2:
-                home_team = event_names[0]
-                away_team = event_names[1]
-                
-                # Add team names to event details for compatibility
-                event_details["homeTeam"] = home_team
-                event_details["awayTeam"] = away_team
-                event_details["eventId"] = event_id
-                
-                # Normalize sportId to numeric codes: SOCCER->1, BASKETBALL->3
-                try:
-                    _orig_sport_id = event_details.get("sportId")
-                    _sport_str = str(_orig_sport_id).upper() if _orig_sport_id is not None else ""
-                    if _sport_str == "SOCCER":
-                        event_details["sportId"] = 1
-                    elif _sport_str == "BASKETBALL":
-                        event_details["sportId"] = 3
-                    if event_details.get("sportId") != _orig_sport_id:
-                        logger.info(f"Normalized sportId: {_orig_sport_id} -> {event_details['sportId']}")
-                except Exception as e:
-                    logger.warning(f"Failed to normalize sportId: {e}")
-                
-                logger.info(f"Event details retrieved: {home_team} vs {away_team}")
-                logger.info(f"Event: {event_details}")
-                logger.info(f"Event ID: {event_id}")
-                logger.info(f"Start time: {event_details.get('startTime')}")
-                logger.info(f"Competition: {event_details.get('competitionName')}")
-                
-                return event_details
-            else:
-                logger.error(f"Invalid event names format: {event_names}")
-                return None
+            payload = response.json() or {}
+            data = payload.get("data") or {}
+            home_team = data.get("homeTeamName") or data.get("home") or ""
+            away_team = data.get("awayTeamName") or data.get("away") or ""
+            sport = data.get("sport") or {}
+            sport_id = (data.get("sport") or {}).get("id") or ""
+            sport_num = 1
+            if "sr:sport:2" in str(sport_id).lower():
+                sport_num = 2
+            event_details = {
+                "homeTeam": home_team,
+                "awayTeam": away_team,
+                "eventId": data.get("eventId") or event_id,
+                "sportId": sport_num,
+                "sport": sport,
+                "markets": data.get("markets") or []
+            }
+            logger.info(f"Event details retrieved: {home_team} vs {away_team}")
+            return event_details
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting event details: {e}")
@@ -1105,10 +1057,9 @@ class BetEngine(WebsiteOpener):
             logger.error(f"Unexpected error in get_event_details: {e}")
             return None
 
-    def __generate_nairabet_bet_url(self, event_details):
+    def __generate_sportybet_bet_url(self, event_details):
         """
-        Generate Nairabet betting URL based on event details
-        Format: https://www.nairabet.com/event/{eventId}
+        Generate Sporty betting URL based on event details
         """
         try:
             # Get event ID from event details
@@ -1118,8 +1069,29 @@ class BetEngine(WebsiteOpener):
                 logger.error(f"Missing event_id for URL generation: {event_details}")
                 return None
             
-            bet_url = f"{self.__bet_host}/event/{event_id}"
-            logger.info(f"Generated Nairabet bet URL: {bet_url}")
+            sport = event_details.get("sport") or {}
+            sname = (sport.get("name") or "").strip()
+            category = sport.get("category") or {}
+            cname = (category.get("name") or "").strip()
+            tournament = category.get("tournament") or {}
+            tname = (tournament.get("name") or "").strip()
+            home = (event_details.get("homeTeam") or event_details.get("homeTeamName") or "").strip()
+            away = (event_details.get("awayTeam") or event_details.get("awayTeamName") or "").strip()
+
+            def _seg(x, lower=False):
+                x = re.sub(r"\s+", "_", str(x))
+                return x.lower() if lower else x
+
+            sport_seg = _seg(sname, lower=True if sname.lower() in ("football", "basketball") else False)
+            category_seg = _seg(cname)
+            tournament_seg = _seg(tname)
+            match_seg = _seg(f"{home}_vs_{away}")
+            id_seg = quote(str(event_id), safe=":")
+            if sport_seg and category_seg and tournament_seg and match_seg:
+                bet_url = f"{self.__bet_host}/ng/sport/{sport_seg}/{category_seg}/{tournament_seg}/{match_seg}/{id_seg}"
+            else:
+                bet_url = f"{self.__bet_host}/ng/event?eventId={quote(str(event_id))}&productId=3"
+            logger.info(f"Generated Sporty bet URL: {bet_url}")
             
             return bet_url
             
@@ -1141,7 +1113,7 @@ class BetEngine(WebsiteOpener):
 
     def __wait_for_market_content(self, timeout_seconds: int = 15) -> None:
         """
-        Explicitly wait for Nairabet market content to render.
+        Explicitly wait for sportybet market content to render.
         Waits until at least one of the known market containers is present.
         """
         try:
@@ -1153,18 +1125,19 @@ class BetEngine(WebsiteOpener):
             # Continue to element-based checks even if readyState wait fails
             pass
         
-        # Wait for the active market group to be present
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".event-details__market-groups"))
+            lambda d: d.execute_script("return !!(document.querySelector('.m-eventDetail') || document.querySelector('.m-detail-wrapper') || document.querySelector('.m-table__wrapper'));")
         )
 
     def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None, sport_id=1):
+        start_bet_ts = time.time()
+        logger.info(f"Starting bet placement: {market_type} - {outcome} - {points} @ {odds}")
         """
-        Place a bet on Nairabet using Selenium
+        Place a bet on sportybet using Selenium
         
         Parameters:
         - account: BetAccount instance
-        - bet_url: Nairabet betting URL for the event
+        - bet_url: sportybet betting URL for the event
         - market_type: Type of bet (moneyline, total, spread)
         - outcome: Outcome to bet on
         - odds: Expected odds
@@ -1197,16 +1170,16 @@ class BetEngine(WebsiteOpener):
             time.sleep(3)
             
             # Check and handle betslip "Remove all" button
-            try:
-                remove_all_button = self.driver.find_element(By.CSS_SELECTOR, ".betslip-header__remove-all")
-                if "betslip-header__remove-all--disabled" not in remove_all_button.get_attribute("class"):
-                    logger.info("Remove all button is enabled, clicking it to clear betslip")
-                    remove_all_button.click()
-                    time.sleep(1)  # Wait for betslip to clear
-                else:
-                    logger.info("Remove all button is disabled, betslip is already empty")
-            except Exception as e:
-                logger.warning(f"Could not find or interact with Remove all button: {e}")
+            # try:
+            #     remove_all_button = self.driver.find_element(By.CSS_SELECTOR, ".betslip-header__remove-all")
+            #     if "betslip-header__remove-all--disabled" not in remove_all_button.get_attribute("class"):
+            #         logger.info("Remove all button is enabled, clicking it to clear betslip")
+            #         remove_all_button.click()
+            #         time.sleep(1)  # Wait for betslip to clear
+            #     else:
+            #         logger.info("Remove all button is disabled, betslip is already empty")
+            # except Exception as e:
+            #     logger.warning(f"Could not find or interact with Remove all button: {e}")
             
             # Find and click the market/outcome
             market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team, sport_id)
@@ -1239,33 +1212,22 @@ class BetEngine(WebsiteOpener):
                 
                 # Simple direct clicking approach - no scrolling
                 try:
-                    # Wait for element to be clickable
                     WebDriverWait(self.driver, 10).until(
                         EC.element_to_be_clickable(market_element)
                     )
-                    
-                    # Direct click on the element
                     market_element.click()
                     logger.info(f"Clicked on market: {market_type} - {outcome} - {points}")
-                    # time.sleep(2)
-                    
                 except Exception as click_error:
                     logger.error(f"Direct click failed, trying JavaScript click: {click_error}")
-                    
-                    # Fallback to JavaScript click
                     try:
                         self.driver.execute_script("arguments[0].click();", market_element)
                         logger.info(f"JavaScript clicked on market: {market_type} - {outcome} - {points}")
-                        # time.sleep(2)
                     except Exception as js_error:
                         logger.error(f"JavaScript click also failed: {js_error}")
-                        
-                        # Last resort: try ActionChains
                         try:
                             actions = ActionChains(self.driver)
                             actions.move_to_element(market_element).click().perform()
                             logger.info(f"ActionChains clicked on market: {market_type} - {outcome} - {points}")
-                            # time.sleep(2)
                         except Exception as action_error:
                             logger.error(f"All click methods failed: {action_error}")
                             raise Exception("All click methods failed")
@@ -1274,12 +1236,42 @@ class BetEngine(WebsiteOpener):
                     logger.error(f"Could not click market element: {e}")
                     return False
             
-            # Enter stake amount using new Nairabet selectors
+            # Navigate to a low-odds virtual event URL before entering stake
+            try:
+                low_candidates = self.__get_low_odds_virtual_candidates(account, max_odds=1.2, limit=5)
+                if low_candidates:
+                    target = low_candidates[0]
+                    self.open_url(target["url"])
+                    try:
+                        self.__wait_for_market_content(timeout_seconds=20)
+                        WebDriverWait(self.driver, 10).until(
+                            lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
+                        )
+                    except Exception:
+                        pass
+                    me2, _o2 = self.__get_market_selector(target["market_type"], target["outcome"], target.get("points"), False, target.get("home"), target.get("away"))
+                    if me2:
+                        try:
+                            WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(me2))
+                            me2.click()
+                            logger.info(f"Clicked backup low-odds market: {target['market_type']} - {target['outcome']} - {target.get('points')}")
+                        except Exception:
+                            try:
+                                self.driver.execute_script("arguments[0].click();", me2)
+                                logger.info("JavaScript clicked backup market")
+                            except Exception:
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element(me2).click().perform()
+                                logger.info("ActionChains clicked backup market")
+            except Exception:
+                pass
+
+            # Enter stake amount using new sportybet selectors
             try:
                 # Fallback: Use JavaScript to find and set stake input
                 logger.info("Trying JavaScript fallback for stake input")
                 script = """
-                var stakeInput = document.querySelector('.betslip-acca-bet__stake .betslip-stake .form-input__input');
+                var stakeInput = document.querySelector('.m-input-wrapper input.m-input.fs-exclude');
                 if (stakeInput) {
                     stakeInput.value = '';
                     stakeInput.value = arguments[0];
@@ -1301,7 +1293,7 @@ class BetEngine(WebsiteOpener):
                 try:
                     # Find the stake input using the new selector structure
                     stake_input = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-acca-bet__stake .betslip-stake .form-input__input"))
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "input.m-input.fs-exclude"))
                     )
                     
                     # Clear existing value and enter new stake
@@ -1312,11 +1304,11 @@ class BetEngine(WebsiteOpener):
                     logger.error(f"fallback also failed: {js_error}")
                     return False
             
-            # Place the bet using new Nairabet selectors
+            # Place the bet using new sportybet selectors
             try:
                 # Wait for the bet button to be clickable
                 place_bet_button = WebDriverWait(self.driver, 30).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div.m-btn-wrapper button.af-button.af-button--primary"))
                 )
                 
                 # Check the button text to determine action needed
@@ -1326,11 +1318,28 @@ class BetEngine(WebsiteOpener):
                 # Click the button
                 place_bet_button.click()
                 logger.info("Clicked bet button")
+                try:
+                    confirm_span = WebDriverWait(self.driver, 15).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "button.af-button.af-button--primary span span[data-cms-key='confirm']"))
+                    )
+                    try:
+                        self.driver.execute_script("arguments[0].closest('button').click();", confirm_span)
+                        logger.info("Clicked confirm button")
+                    except Exception:
+                        try:
+                            btn = confirm_span.find_element(By.XPATH, "ancestor::button[1]")
+                            WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(btn))
+                            btn.click()
+                            logger.info("Clicked confirm button (fallback)")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 
                 # If button says "Accept Odds...", odds have changed - need to recalculate EV
-                if "accept odds" in button_text.lower():
-                    logger.warning("⚠️ Odds have changed! discarding bet...")
-                    return False
+                # if "accept odds" in button_text.lower():
+                #     logger.warning("⚠️ Odds have changed! discarding bet...")
+                #     return False
                     # try:
                     #     # Get the shaped_data from the current bet context
                     #     current_shaped_data = getattr(self, '_current_shaped_data', None)
@@ -1346,10 +1355,10 @@ class BetEngine(WebsiteOpener):
                     #         self.__take_screenshot("odds_change_no_event_id")
                     #         return False
                         
-                    #     # Get event details from Nairabet API to get exact odds
+                    #     # Get event details from sportybet API to get exact odds
                     #     event_details = self.__get_event_details(event_id)
                     #     if not event_details:
-                    #         logger.error("Failed to get event details from Nairabet API")
+                    #         logger.error("Failed to get event details from sportybet API")
                     #         self.__take_screenshot("odds_change_no_event_details")
                     #         return False
                         
@@ -1361,17 +1370,17 @@ class BetEngine(WebsiteOpener):
                     #     home_team = current_shaped_data["game"]["home"]
                     #     away_team = current_shaped_data["game"]["away"]
                         
-                    #     # Get the exact market and odds from Nairabet API using the same method as initial bet
+                    #     # Get the exact market and odds from sportybet API using the same method as initial bet
                     #     bet_code, new_odds, _ = self.__find_market_bet_code_with_points(
                     #         event_details, line_type, outcome, points, is_first_half, home_team, away_team
                     #     )
                         
                     #     if not new_odds:
-                    #         logger.error("Could not get new odds from Nairabet API")
+                    #         logger.error("Could not get new odds from sportybet API")
                     #         self.__take_screenshot("odds_change_no_odds_from_api")
                     #         return False
                         
-                    #     logger.info(f"New odds from Nairabet API: {new_odds}")
+                    #     logger.info(f"New odds from sportybet API: {new_odds}")
                         
                     #     # Recalculate EV with new odds
                     #     new_ev = self.__calculate_ev(new_odds, current_shaped_data)
@@ -1399,13 +1408,14 @@ class BetEngine(WebsiteOpener):
                 
                 # Wait for success confirmation
                 try:
-                    success_element = WebDriverWait(self.driver, 20).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, ".betslip-bet-receipt__title"))
+                    success_element = WebDriverWait(self.driver, 25).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-cms-key='submission_successful']"))
                     )
-                    
                     success_text = success_element.text.strip()
-                    if "Bet Placed Successfully" in success_text:
+                    if "Submission Successful" in success_text:
                         logger.info("✅ Bet placed successfully!")
+                        elapsed = time.time() - start_bet_ts
+                        logger.info(f"Bet placement took {elapsed:.2f}s")
                         return True
                     else:
                         logger.warning(f"⚠️ Unexpected success message: {success_text}")
@@ -1451,7 +1461,7 @@ class BetEngine(WebsiteOpener):
 
     def __get_market_selector(self, market_type, outcome, points=None, is_first_half=False, home_team=None, away_team=None, sport_id=1):
         """
-        Get the CSS selector for a specific market and outcome on Nairabet
+        Get the CSS selector for a specific market and outcome on sportybet
         
         Parameters:
         - market_type: Type of bet (moneyline, total, spread)
@@ -1468,89 +1478,199 @@ class BetEngine(WebsiteOpener):
         market_type_lower = market_type.lower()
         outcome_lower = outcome.lower()
 
-        logger.info(f"market_type_lower: {market_type_lower}, outcome_lower: {outcome_lower}, is_first_half: {is_first_half}, home_team: {home_team}, away_team: {away_team}")
-        # Handle first half navigation
-        if is_first_half and not (sport_id == "3" or sport_id == 3):
-            # Click halftime button first
+        logger.info(f"market_type_lower: {market_type_lower}, outcome_lower: {outcome_lower}, is_first_half: {is_first_half}, home_team: {home_team}, away_team: {away_team}, points: {points}")
+        if is_first_half:
             try:
-                # Wait for the first half button to be present and clickable (4th li element)
-                halftime_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, ".event-details__market-groups .horizontal-scroll-box__body li:nth-child(4) .horizontal-selector-option"))
-                )
-                
-                # Try regular click first
-                try:
-                    halftime_button.click()
-                    # print("Clicked first half tab")
-                except Exception as click_error:
-                    logger.error(f"Regular click failed, trying JavaScript click: {click_error}")
-                    # Use JavaScript click as fallback
-                    self.driver.execute_script("arguments[0].click();", halftime_button)
-                    logger.info("JavaScript clicked first half tab")
-                
-                time.sleep(2)
-            except Exception as e:
-                logger.error(f"Could not click first half tab: {e}")
-                return None, None
+                nav_items = self.driver.find_elements(By.CSS_SELECTOR, ".m-nav .m-nav-item div")
+                for el in nav_items:
+                    tx = el.text.strip().lower()
+                    if "half" in tx:
+                        el.click()
+                        time.sleep(1)
+                        break
+            except Exception:
+                pass
+        else:
+            try:
+                logger.info("clicking main")
+                nav_items = self.driver.find_elements(By.CSS_SELECTOR, ".m-nav .m-nav-item div")
+                logger.info(f"nav: {nav_items}")
+                for idx, nav in enumerate(nav_items):
+                    try:
+                        html = nav.get_attribute("outerHTML")
+                        logger.info(f"nav[{idx}] HTML: {html}")
+                    except Exception as ex:
+                        logger.warning(f"Could not get HTML for nav[{idx}]: {ex}")
+                for el in nav_items:
+                    logger.info("1 main")
+                    tx = el.text.strip().lower()
+                    logger.info(f"=main: {tx}")
+                    if "main" in tx:
+                        logger.info("clicked main")
+                        el.click()
+                        time.sleep(1)
+                        break
+            except Exception:
+                pass
         
-        # Get all market rows
         try:
-            # Take screenshot before searching for market rows
-            try:
-                screenshot_path = f"market_search_{int(time.time())}.png"
-                self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Market search screenshot saved to {screenshot_path}")
-            except Exception as screenshot_error:
-                logger.error(f"Failed to take market search screenshot: {screenshot_error}")
-            market_rows = self.driver.find_elements(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
-            if not market_rows:
-                logger.warning("No market rows found")
+            wrappers = self.driver.find_elements(By.CSS_SELECTOR, ".m-table__wrapper")
+            if not wrappers:
+                logger.info("reutened none")
                 return None, None
         except Exception as e:
-            logger.error(f"Error finding market rows: {e}")
-            return None, None   
+            logger.error(f"Error finding market containers: {e}")
+            return None, None
         
         # Check if this is basketball
-        is_basketball = (sport_id == "3" or sport_id == 3)
+        # is_basketball = (sport_id == "3" or sport_id == 3)
         
         # 1X2 (Moneyline) - First div from the list
         if market_type_lower == "moneyline" or market_type_lower == "money_line":
-            if is_basketball:
-                return self.__find_basketball_moneyline_outcome(outcome_lower, is_first_half)
-            else:
-                return self.__find_1x2_outcome(market_rows[0] if market_rows else None, outcome_lower)
+            return self.__sporty_find_1x2(outcome_lower, is_first_half)
         
         # Over/Under
         elif market_type_lower == "total":
             if not points:
                 return None, None
-            if is_basketball:
-                return self.__find_basketball_total_outcome(points, outcome_lower, is_first_half)
-            else:
-                return self.__find_total_outcome(points, outcome_lower)
+            return self.__sporty_find_total(points, outcome_lower)
         
         # Asian Handicap
         elif market_type_lower == "spread":
             if points is None:
-                logger.info(f"Points is None, returning None")
                 return None, None
-            # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
-            logger.info(f"DEBUG: points={points}, points_float={points}, abs_points={abs(float(points))}")
-            if abs(float(points)) < 0.01:  # Using small threshold for floating point comparison
-                logger.info(f"Handicap is 0, looking for DNB (Draw No Bet) market instead of Asian Handicap")
-                # For DNB, use team names from shaped_data (passed as parameters)
-                return self.__find_dnb_outcome(outcome_lower, is_first_half, home_team, away_team)
-            
-            if is_basketball:
-                return self.__find_basketball_handicap_outcome(points, outcome_lower, home_team, away_team, is_first_half)
-            else:
-                return self.__find_handicap_outcome(points, outcome_lower, home_team, away_team)
+            if abs(float(points)) < 0.01:
+                return self.__sporty_find_dnb(outcome_lower, home_team, away_team)
+            return self.__sporty_find_handicap(points, outcome_lower, home_team, away_team)
         
         return None, None
+
+    def __get_low_odds_virtual_candidates(self, account, max_odds=1.2, limit=5):
+        try:
+            ts = str(int(time.time() * 1000))
+            url = f"{self.__bet_api_host}/factsCenter/pcUpcomingEvents?sportId=sr:sport:202120001&marketId=1,18&pageSize=100&pageNum=1&option=1&timeline=2&_t={ts}"
+            cookies = {}
+            if hasattr(account, 'cookie_jar') and account.cookie_jar:
+                if isinstance(account.cookie_jar, dict):
+                    cookies = account.cookie_jar
+                elif isinstance(account.cookie_jar, list):
+                    cookies = {c.get('name'): c.get('value') for c in account.cookie_jar}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Accept": "application/json",
+                "Referer": "https://www.sportybet.com/ng/",
+                "Origin": "https://www.sportybet.com"
+            }
+            resp = requests.get(url, headers=headers, cookies=cookies, proxies=account.get_proxies())
+            if resp.status_code != 200:
+                return []
+            data = resp.json().get("data", {})
+            tournaments = data.get("tournaments", [])
+            now_ms = int(time.time() * 1000)
+            candidates = []
+            for t in tournaments:
+                events = t.get("events", [])
+                for ev in events:
+                    est = ev.get("estimateStartTime")
+                    if not isinstance(est, int):
+                        continue
+                    if est < now_ms + 5 * 60 * 1000:
+                        continue
+                    home = ev.get("homeTeamName") or ""
+                    away = ev.get("awayTeamName") or ""
+                    sport = ev.get("sport", {})
+                    sname = (sport.get("name") or "").strip()
+                    cat = sport.get("category", {})
+                    cname = (cat.get("name") or "").strip()
+                    tour = cat.get("tournament", {})
+                    tname = (tour.get("name") or "").strip()
+                    eid = ev.get("eventId") or ""
+                    best = None
+                    best_info = None
+                    for m in ev.get("markets", []):
+                        mname = (m.get("name") or m.get("desc") or "").strip().lower()
+                        for o in m.get("outcomes", []):
+                            ia = o.get("isActive", 1)
+                            try:
+                                if int(str(ia)) == 0:
+                                    continue
+                            except Exception:
+                                if str(ia).strip().lower() in ("0", "false"):
+                                    continue
+                            otxt = (o.get("desc") or o.get("name") or "").strip().lower()
+                            odds_raw = o.get("odds") or o.get("value") or o.get("price")
+                            try:
+                                odds_val = float(odds_raw)
+                            except Exception:
+                                continue
+                            if odds_val <= max_odds:
+                                if best is None or odds_val < best:
+                                    mt = None
+                                    pts = None
+                                    oc = None
+                                    if "1x2" in mname:
+                                        mt = "moneyline"
+                                        if "home" in otxt:
+                                            oc = "home"
+                                        elif "away" in otxt:
+                                            oc = "away"
+                                        elif "draw" in otxt:
+                                            oc = "draw"
+                                    elif "over/under" in mname or "total" in mname:
+                                        mt = "total"
+                                        mm = re.search(r"(over|under)\s*(\d+\.?\d*)", otxt)
+                                        if mm:
+                                            oc = mm.group(1)
+                                            try:
+                                                pts = float(mm.group(2))
+                                            except Exception:
+                                                pts = None
+                                    elif "handicap" in mname:
+                                        mt = "spread"
+                                        side = None
+                                        if home and home.lower() in otxt:
+                                            side = "home"
+                                        elif away and away.lower() in otxt:
+                                            side = "away"
+                                        mm = re.search(r"([+-]?\d+\.?\d*)", otxt)
+                                        if side:
+                                            oc = side
+                                            try:
+                                                pts = float(mm.group(1)) if mm else None
+                                            except Exception:
+                                                pts = None
+                                    if mt and oc:
+                                        best = odds_val
+                                        best_info = {
+                                            "market_type": mt,
+                                            "outcome": oc,
+                                            "points": pts,
+                                            "odds": odds_val
+                                        }
+                    if best_info:
+                        seg_s = quote(sname, safe="")
+                        seg_c = quote(cname, safe="")
+                        seg_t = quote(tname, safe="")
+                        seg_match = quote(f"{home}_vs_{away}", safe="")
+                        seg_id = quote(eid, safe="")
+                        u = f"{self.__bet_host}/ng/sport/{seg_s}/{seg_c}/{seg_t}/{seg_match}/{seg_id}"
+                        candidates.append({
+                            "url": u,
+                            "home": home,
+                            "away": away,
+                            "market_type": best_info["market_type"],
+                            "outcome": best_info["outcome"],
+                            "points": best_info["points"],
+                            "odds": best_info["odds"]
+                        })
+            candidates.sort(key=lambda x: x.get("odds", 9999))
+            return candidates[:limit]
+        except Exception:
+            return []
     
-    def __find_1x2_outcome(self, market_row, outcome):
+    def __sporty_find_1x2(self, outcome, is_first_half=False):
         """
-        Find the 1X2 outcome element for Nairabet
+        Find the 1X2 outcome element for sportybet
         
         Parameters:
         - market_row: The market row element for 1X2 (not used in new implementation)
@@ -1560,55 +1680,49 @@ class BetEngine(WebsiteOpener):
         - Element or None if not found
         """
         try:
-            # Get the active market group div
-            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
-            
-            # Get the first event-market div (1X2 market)
-            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
-            if not event_markets:
-                logger.warning("No event-market divs found for 1X2")
-                return None, None
-            
-            logger.info("finding 1x2")
-            # First event-market div is for 1X2
-            market_div = event_markets[0]
-            
-            # Get all event-market__cell divs (should be 3: home, draw, away)
-            cells = market_div.find_elements(By.CSS_SELECTOR, ".event-market__cell")
-            
-            if len(cells) < 3:
-                logger.warning(f"Expected 3 cells for 1X2, found {len(cells)}")
-                return None, None
-            
-            # Map outcome to index: first=home, second=draw, third=away
-            outcome_index = {"home": 0, "draw": 1, "away": 2}
-            
-            if outcome not in outcome_index:
-                logger.error(f"Invalid 1X2 outcome: {outcome}")
-                return None, None
-            
-            target_cell = cells[outcome_index[outcome]]
-            
-            # Get the button inside this cell
-            button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-            
-            # Verify odds
-            try:
-                odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                odds_text = odds_element.text.strip()
-                logger.info(f"Found 1X2 {outcome} with odds: {float(odds_text)}")
-                return button, float(odds_text)
-            except Exception as e:
-                logger.error(f"Could not find odds in 1X2 outcome: {e}")
-                return None, None
+            logger.info(f"moneyline outcome: {outcome}")
+            wrappers = self.driver.find_elements(By.CSS_SELECTOR, ".m-table__wrapper")
+            for w in wrappers:
+                try:
+                    header = w.find_element(By.CSS_SELECTOR, ".m-table-header .m-table-header-title")
+                    ht = header.text.strip().lower()
+                    # logger.info(f"ht {ht}")
+                    if (is_first_half and ("1st" in ht and "half" in ht and "1x2" in ht and "up" not in ht)) or (not is_first_half and "up" not in ht and (ht == "1x2" or ("1x2" in ht and "half" not in ht))):
+                        # logger.info(f"1X2 header found")
+                        table = w.find_element(By.CSS_SELECTOR, ".m-table-row.m-outcome")
+                        cells = table.find_elements(By.CSS_SELECTOR, ".m-table-cell.m-table-cell--responsive")
+                        mapping = {"home": "home", "draw": "draw", "away": "away"}
+                        target = mapping.get(outcome)
+                        # Dump the outerHTML of each cell so we can see the actual markup
+                        for idx, cell in enumerate(cells):
+                            try:
+                                html = cell.get_attribute("outerHTML")
+                                logger.info(f"cell[{idx}] HTML: {html}")
+                            except Exception as ex:
+                                logger.warning(f"Could not get HTML for cell[{idx}]: {ex}")
+                        # logger.info(f"cells no: {len(cells)}")
+                        for cell in cells:
+                            labels = cell.find_elements(By.CSS_SELECTOR, ".m-table-cell-item")
+                            logger.info(f"labels: {labels}")
+                            if len(labels) >= 2:
+                                label = labels[0].text.strip().lower()
+                                if label == target:
+                                    odds_text = labels[1].text.strip()
+                                    try:
+                                        return cell, float(odds_text)
+                                    except Exception:
+                                        return cell, None
+                except Exception:
+                    continue
+            return None, None
                 
         except Exception as e:
             logger.error(f"Error finding 1X2 outcome: {e}")
             return None, None
     
-    def __find_total_outcome(self, target_points, outcome):
+    def __sporty_find_total(self, target_points, outcome):
         """
-        Find the over/under outcome element for Nairabet
+        Find the over/under outcome element for sportybet
         
         Parameters:
         - target_points: Points value to look for
@@ -1618,104 +1732,40 @@ class BetEngine(WebsiteOpener):
         - Element or None if not found
         """
         try:
-            # Get the active market group div
-            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
-            
-            # Get all event-market divs and find the one with totals
-            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
-            
-            totals_market_div = None
-            for market_div in event_markets:
+            logger.info("total find selector")
+            wrappers = self.driver.find_elements(By.CSS_SELECTOR, ".m-table__wrapper")
+            for w in wrappers:
                 try:
-                    # Check if this market has totals by looking for totals-related text in header
-                    header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
-                    header_text = header.text.strip()
-                    
-                    # Check for main totals or first half totals
-                    if "Total Goals (O/U)" in header_text or "First Half Over/Under Goals" in header_text:
-                        totals_market_div = market_div
-                        logger.info(f"Found totals market: {header_text}")
-                        break
-                        
-                except Exception as e:
-                    # This market doesn't have the expected structure, continue to next
+                    header = w.find_element(By.CSS_SELECTOR, ".m-table-header .m-table-header-title")
+                    if "over/under" or "o/u" in header.text.strip().lower():
+                        rows = w.find_elements(By.CSS_SELECTOR, ".m-table .m-table-row")
+                        for row in rows:
+                            cells = row.find_elements(By.CSS_SELECTOR, ".m-table-cell.m-table-cell--responsive")
+                            for cell in cells:
+                                labels = cell.find_elements(By.CSS_SELECTOR, ".m-table-cell-item")
+                                if len(labels) >= 2:
+                                    label = labels[0].text.strip().lower()
+                                    odds_text = labels[1].text.strip()
+                                    m = re.search(r"(over|under)\s*(\d+\.?\d*)", label)
+                                    if m:
+                                        side = m.group(1)
+                                        pts = float(m.group(2))
+                                        if side == outcome and abs(pts - float(target_points)) < 0.01:
+                                            try:
+                                                return cell, float(odds_text)
+                                            except Exception:
+                                                return cell, None
+                except Exception:
                     continue
-            
-            if not totals_market_div:
-                logger.warning("No totals market found")
-                return None, None
-            
-            # Get all event-market__row divs within this totals market
-            rows = totals_market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
-            
-            for row in rows:
-                try:
-                    # Each row has 2 cells: first for under, second for over
-                    cells = row.find_elements(By.CSS_SELECTOR, ".event-market__cell")
-                    
-                    if len(cells) < 2:
-                        logger.warning(f"Expected 2 cells for totals row, found {len(cells)}")
-                        continue
-                    
-                    # Check if this row has the target points by looking at cell titles
-                    # Look for the cell that contains the target points
-                    target_cell = None
-                    found_points = False
-                    
-                    for cell in cells:
-                        try:
-                            # Check if cell has a title with points
-                            title_element = cell.find_element(By.CSS_SELECTOR, ".event-market__cell-title")
-                            title_text = title_element.text.strip()
-                            
-                            # Extract points value from title (e.g., "Over 7.5", "Under 2.5")
-                            import re
-                            match = re.search(r'(\d+\.?\d*)', title_text)
-                            if match:
-                                cell_points = float(match.group(1))
-                        
-                                # Check if this matches our target points
-                                if abs(cell_points - float(target_points)) < 0.01:
-                                    # Check if this cell matches our outcome
-                                    if (outcome == "over" and "over" in title_text.lower()) or \
-                                       (outcome == "under" and "under" in title_text.lower()):
-                                        target_cell = cell
-                                        found_points = True
-                                        break
-                        except Exception as e:
-                            # Cell doesn't have expected structure, continue to next
-                            continue
-                    
-                    if not found_points or not target_cell:
-                                continue
-                            
-                    # Get the button inside this cell
-                    button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-                            
-                    # Verify odds
-                    try:
-                        odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                        odds_text = odds_element.text.strip()
-                        logger.info(f"Found total {outcome} {target_points} with odds: {float(odds_text)}")
-                        return button, float(odds_text)
-                    except Exception as e:
-                        logger.error(f"Could not find odds in total outcome: {e}")
-                        return None, None
-                                
-                except Exception as e:
-                    # Row doesn't match, continue to next
-                    return None, None
-                    
-            logger.warning(f"Could not find total market for {target_points} {outcome}")
             return None, None
             
         except Exception as e:
             logger.error(f"Error finding total outcome: {e}")
             return None, None
     
-    def __find_handicap_outcome(self, target_points, outcome, home_team, away_team):
+    def __sporty_find_handicap(self, target_points, outcome, home_team, away_team):
         """
-        Find the Asian handicap outcome element for Nairabet
+        Find the Asian handicap outcome element for sportybet
         
         Parameters:
         - target_points: Points value to look for
@@ -1725,105 +1775,57 @@ class BetEngine(WebsiteOpener):
         - Element or None if not found
         """
         try:
-            # Get the active market group div
-            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
-            
-            # Get all event-market divs and find the one with handicap
-            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
-            
-            for market_div in event_markets:
+            logger.info(f"spread find selector {outcome}")
+            wrappers = self.driver.find_elements(By.CSS_SELECTOR, ".m-table__wrapper")
+            for w in wrappers:
                 try:
-                    # Check if this market has handicap by looking for handicap-related text
-                    header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
-                    header_text = header.text.strip().lower()
-                    
-                    if "handicap" in header_text:
-                        # Found handicap market, now look for the specific points
-                        rows = market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
-                        
+                    header = w.find_element(By.CSS_SELECTOR, ".m-table-header .m-table-header-title")
+                    if "asian handicap" in header.text.strip().lower():
+                        logger.info("header found")
+                        rows = w.find_elements(By.CSS_SELECTOR, ".m-table .m-table-row")
                         for row in rows:
-                            try:
-                                cells = row.find_elements(By.CSS_SELECTOR, ".event-market__cell")
-                                
-                                if len(cells) < 2:
-                                    continue
-                    
-                                # Check if this row has the target points
-                                # The points might be in the row structure or we need to find the right row
-                                # Check each cell to find the one with the correct team and points
-                                target_cell = None
-                                
-                                for i, cell in enumerate(cells):
-                                    try:
-                                        # Get the cell text to check team name and points
-                                        cell_text = cell.text.strip()
-                                        # logger.info(f"Checking cell {i}: '{cell_text}'")
-                                        
-                                        # Check if this cell contains the target team name and points
-                                        if outcome == "home" and home_team in cell_text and "Draw" not in cell_text:
-                                            # Look for points after the team name (e.g., "NAC Breda -2")
-                                            target_points_str = str(target_points)
-                                            if target_points > 0 and not target_points_str.startswith('+'):
-                                                # For positive points, ensure we look for the "+" sign
-                                                target_points_str = f"+{target_points}"
-                                            
-                                            if target_points_str in cell_text:
-                                                target_cell = cell
-                                                logger.info(f"Found home team cell with correct points: {target_points_str} - {cell_text}")
-                                                break
-                                        elif outcome == "away" and away_team in cell_text and "Draw" not in cell_text:
-                                            # Look for points after the team name (e.g., "AZ Alkmaar +2")
-                                            target_points_str = str(target_points)
-                                            if target_points > 0 and not target_points_str.startswith('+'):
-                                                # For positive points, ensure we look for the "+" sign
-                                                target_points_str = f"+{target_points}"
-                                            
-                                            if target_points_str in cell_text:
-                                                target_cell = cell
-                                                logger.info(f"Found away team cell with correct points: {target_points_str} - {cell_text}")
-                                                break
-                                    except Exception as e:
-                                        logger.debug(f"Error checking cell {i}: {e}")
-                                        continue
-                                
-                                if target_cell:
-                                    # Get the button inside this cell
-                                    button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-                                    
-                                    # Verify odds
-                                    try:
-                                        odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                                        odds_text = odds_element.text.strip()
-                                        logger.info(f"Found handicap {outcome} {target_points} with odds: {float(odds_text)}")
-                                        return button, float(odds_text)
-                                    except Exception as e:
-                                        logger.error(f"Could not find odds in handicap outcome: {e}")
-                                        continue
-                                else:
-                                    logger.debug(f"No cell found for {outcome} team with points {target_points}")
-                                    continue
-                                    
-                            except Exception as e:
-                                # Row doesn't match, continue to next
-                                continue
-                        
-                        # If we found the handicap market but no matching row, break
-                        break
-                        
-                except Exception as e:
-                    # This market doesn't have the expected structure, continue to next
+                            cells = row.find_elements(By.CSS_SELECTOR, ".m-table-row.m-outcome .m-table-cell.m-table-cell--responsive")
+                            for cell in cells:
+                                labels = cell.find_elements(By.CSS_SELECTOR, ".m-table-cell-item")
+                                if len(labels) >= 2:
+                                    label = labels[0].text.strip().lower()
+                                    odds_text = labels[1].text.strip()
+                                    logger.info(f"label: {label}")
+                                    logger.info(f"odds_text: {odds_text}")
+                                    side = None
+                                    ms = re.match(r"^\s*(home|away)\b", label)
+                                    if ms:
+                                        side = ms.group(1)
+                                    else:
+                                        if home_team and home_team.lower() in label:
+                                            side = "home"
+                                        elif away_team and away_team.lower() in label:
+                                            side = "away"
+                                    m = re.search(r"([+-]?\d+\.?\d*)", label)
+                                    logger.info(f"gotten point {m}")    
+                                    logger.info(f"side: {side}")
+
+                                    if side == outcome and m:
+                                        logger.info("im here")
+                                        pts = float(m.group(1))
+                                        logger.info(f"pts {pts}")
+                                        if abs(pts - float(target_points)) < 0.01:
+                                            logger.info("done")
+                                            try:
+                                                return cell, float(odds_text)
+                                            except Exception:
+                                                return cell, None
+                except Exception:
                     continue
-            
-            logger.info(f"Could not find handicap market for {target_points} {outcome}")
             return None, None
             
         except Exception as e:
             logger.error(f"Error finding handicap outcome: {e}")
             return None, None
 
-    def __find_dnb_outcome(self, outcome, is_first_half=False, home_team=None, away_team=None):
+    def __sporty_find_dnb(self, outcome, home_team=None, away_team=None):
         """
-        Find the DNB (Draw No Bet) outcome element for Nairabet
+        Find the DNB (Draw No Bet) outcome element for sportybet
         
         Parameters:
         - outcome: 'home' or 'away'
@@ -1835,113 +1837,45 @@ class BetEngine(WebsiteOpener):
         - Element or None if not found
         """
         try:
-            logger.info(f"Finding DNB outcome for {outcome}, {is_first_half}, {home_team}, {away_team}")
-            # Get the active market group div
-            market_group = self.driver.find_element(By.CSS_SELECTOR, ".event-details__market-group.event-details__market-group--active")
-            
-            # Get all event-market divs and find the one with "Draw No Bet"
-            event_markets = market_group.find_elements(By.CSS_SELECTOR, ".event-market")
-            
-            dnb_market_div = None
-            for market_div in event_markets:
+            logger.info(f"Finding DNB outcome for {outcome}, {home_team}, {away_team}")
+            wrappers = self.driver.find_elements(By.CSS_SELECTOR, ".m-table__wrapper")
+            for w in wrappers:
                 try:
-                    # Check if this market has "Draw No Bet" in the header
-                    header = market_div.find_element(By.CSS_SELECTOR, ".event-market__header span.event-market__name")
-                    header_text = header.text.strip()
-                    
-                    if "Draw No Bet" in header_text:
-                        dnb_market_div = market_div
-                        logger.info(f"Found DNB market: {header_text}")
-                        break
-                        
-                except Exception as e:
-                    # This market doesn't have the expected structure, continue to next
+                    header = w.find_element(By.CSS_SELECTOR, ".m-table-header .m-table-header-title")
+                    if "draw no bet" in header.text.strip().lower():
+                        logger.info(f"seen header")
+                        cells = w.find_elements(By.CSS_SELECTOR, ".m-table-row.m-outcome .m-table-cell.m-table-cell--responsive")
+                        logger.info(f"len of cells {len(cells)}")
+                        # Dump the outerHTML of each cell so we can see the actual markup
+                        # for idx, cell in enumerate(cells):
+                        #     try:
+                        #         html = cell.get_attribute("outerHTML")
+                        #         logger.info(f"cell[{idx}] HTML: {html}")
+                        #     except Exception as ex:
+                        #         logger.warning(f"Could not get HTML for cell[{idx}]: {ex}")
+                        for cell in cells:
+                            labels = cell.find_elements(By.CSS_SELECTOR, ".m-table-cell-item")
+                            logger.info(f"labels: {len(labels)}")
+                            # for idx, label in enumerate(labels):
+                            #     try:
+                            #         html = label.get_attribute("outerHTML")
+                            #         logger.info(f"cell[{idx}] HTML: {html}")
+                            #     except Exception as ex:
+                            #         logger.warning(f"Could not get HTML for cell[{idx}]: {ex}")
+                            if len(labels) >= 2:
+                                label = labels[0].text.strip().lower()
+                                odds_text = labels[1].text.strip()
+                                logger.info(f"label {label}")
+                                logger.info(f"odds_text {odds_text}")
+
+                                if outcome == label:
+                                    try:
+                                        return cell, float(odds_text)
+                                    except Exception:
+                                        return cell, None
+                except Exception:
                     continue
-            
-            if not dnb_market_div:
-                logger.warning("No DNB market found")
-                return None, None
-            
-            # Get all event-market__row divs within this DNB market
-            rows = dnb_market_div.find_elements(By.CSS_SELECTOR, ".event-market__row")
-            
-            if not rows:
-                logger.warning("No rows found in DNB market")
-                return None, None
-            
-            # Use the first row (there's usually only one for DNB)
-            row = rows[0]
-            cells = row.find_elements(By.CSS_SELECTOR, ".event-market__cell")
-            
-            if len(cells) < 1:
-                logger.warning(f"Expected at least 1 cell for DNB, found {len(cells)}")
-                return None, None
-            
-            # Check each cell for team name to determine which one matches our outcome
-            target_cell = None
-            
-            for cell in cells:
-                try:
-                    # Get the team name from the cell title
-                    title_element = cell.find_element(By.CSS_SELECTOR, ".event-market__cell-title")
-                    team_name = title_element.text.strip()
-                    
-                    # Check if this cell has a button (not empty)
-                    try:
-                        button = cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-                        # Cell has a button, so it's not empty
-                    except Exception:
-                        # Cell is empty, skip it
-                        continue
-                    
-                    # Determine if this cell is for home or away based on team name
-                    if home_team and away_team:
-                        # Use provided team names for exact matching
-                        if outcome == "home" and team_name.lower() == home_team.lower():
-                            target_cell = cell
-                            logger.info(f"Found DNB home team: {team_name}")
-                            break
-                        elif outcome == "away" and team_name.lower() == away_team.lower():
-                            target_cell = cell
-                            logger.info(f"Found DNB away team: {team_name}")
-                            break
-                    else:
-                        # Fallback: use first non-empty cell for home, second for away
-                        if outcome == "home" and target_cell is None:
-                            target_cell = cell
-                            logger.info(f"Found DNB home team: {team_name}")
-                        elif outcome == "away" and target_cell is None:
-                            target_cell = cell
-                            logger.info(f"Found DNB away team: {team_name}")
-                        
-                        # If we found both outcomes or the specific one we need, break
-                        if target_cell is not None:
-                            break
-                
-                except Exception as e:
-                    # Cell doesn't have expected structure, continue to next
-                    continue
-                    
-            if not target_cell:
-                logger.warning(f"Could not find target cell for DNB {outcome}")
-                return None, None
-            
-            # Get the button inside this cell
-            try:
-                button = target_cell.find_element(By.CSS_SELECTOR, "button.odds-button")
-                
-                # Verify odds
-                try:
-                    odds_element = button.find_element(By.CSS_SELECTOR, ".odds-button__price span")
-                    odds_text = odds_element.text.strip()
-                    logger.info(f"Found DNB {outcome} with odds: {float(odds_text)}")
-                    return button, float(odds_text)
-                except Exception as e:
-                    logger.error(f"Could not find odds in DNB outcome: {e}")
-                    return None, None
-            except Exception as e:
-                logger.error(f"Error finding DNB outcome: {e}")
-                return None, None
+            return None, None
             
         except Exception as e:
             logger.error(f"Error finding DNB outcome: {e}")
@@ -1949,7 +1883,7 @@ class BetEngine(WebsiteOpener):
 
     def __find_basketball_moneyline_outcome(self, outcome, is_first_half=False):
         """
-        Find the basketball moneyline outcome element for Nairabet.
+        Find the basketball moneyline outcome element for sportybet.
         Full game: prefer "Match Result (OT)" then "Match winner", fallback "Match Result (No OT)".
         First half: use "1st Half Winner" (same page for basketball).
         
@@ -2022,7 +1956,7 @@ class BetEngine(WebsiteOpener):
 
     def __find_basketball_total_outcome(self, target_points, outcome, is_first_half=False):
         """
-        Find the basketball total points outcome element for Nairabet
+        Find the basketball total points outcome element for sportybet
         For basketball, first-half totals are not targeted; skip when is_first_half is True.
         Looks for "Total Points" market for full game totals.
         
@@ -2141,7 +2075,7 @@ class BetEngine(WebsiteOpener):
 
     def __find_basketball_handicap_outcome(self, target_points, outcome, home_team, away_team, is_first_half=False):
         """
-        Find the basketball handicap outcome element for Nairabet
+        Find the basketball handicap outcome element for sportybet
         Searches both "Handicap - Rolling Middle Line" and "Game Handicap" for full game,
         and "1st Half Handicap - Rolling Middle Line" for first-half bets.
         
@@ -2329,11 +2263,12 @@ class BetEngine(WebsiteOpener):
                     
                     success = self.__place_bet_with_selenium(
                         account,
-                        self.__generate_nairabet_bet_url(bet_data["event_details"]),
+                        self.__generate_sportybet_bet_url(bet_data["event_details"]),
                         bet_data["market_type"],
                         bet_data["outcome"],
                         bet_data["odds"],
-                        bet_data["stake"],  # Use pre-calculated stake
+                        10,
+                        # bet_data["stake"],  # Use pre-calculated stake
                         bet_data["shaped_data"]["category"]["meta"].get("value"),
                         bet_data.get("is_first_half", False),
                         bet_data["shaped_data"]["game"]["home"],  # home_team from shaped_data
@@ -2781,7 +2716,7 @@ class BetEngine(WebsiteOpener):
         Calculate the stake amount based on Kelly criterion
         
         Parameters:
-        - bet_odds: The decimal odds offered by Nairabet
+        - bet_odds: The decimal odds offered by sportybet
         - shaped_data: The data with prices and outcome information
         
         Returns:
@@ -2969,9 +2904,9 @@ class BetEngine(WebsiteOpener):
         
         return False
     
-    def __map_asian_handicap_to_nairabet(self, points):
+    def __map_asian_handicap_to_sportybet(self, points):
         """
-        Map Pinnacle Asian Handicap values to Nairabet regular handicap format
+        Map Pinnacle Asian Handicap values to sportybet regular handicap format
         
         Asian handicaps with .5 are mapped to whole numbers by removing the decimal:
         -2.5 → -2, -1.5 → -1, -0.5 → 0, +0.5 → +1, +1.5 → +2, etc.
@@ -2980,7 +2915,7 @@ class BetEngine(WebsiteOpener):
         - points: Asian handicap value from Pinnacle
         
         Returns:
-        - Mapped handicap value for Nairabet
+        - Mapped handicap value for sportybet
         """
         if points % 1 == 0.5:  # Has .5 decimal
             if points > 0:
@@ -3002,13 +2937,15 @@ class BetEngine(WebsiteOpener):
         # Get basic game info
         home_team = event_details.get("homeTeam", "")
         away_team = event_details.get("awayTeam", "")
-        sport_id = event_details.get("sportId", "1")
+        sport_info = event_details.get("sport") or {}
+        sport_name = (sport_info.get("name") or "").strip().lower()
+        sport_id = sport_info.get("id") or ""
         
         # Generate game ID for outcome tracking
         game_id = self.__generate_game_id(home_team, away_team)
         
         # Identify if this event is basketball
-        is_basketball = (sport_id == "3" or sport_id == 3)
+        is_basketball = (sport_name == "basketball" or sport_id in ("2", "sr:sport:2"))
         
         # Check both normal and first half markets
         for is_first_half in [False, True]:
@@ -3035,9 +2972,9 @@ class BetEngine(WebsiteOpener):
                     
                     ev = self.__calculate_ev(odds, modified_shaped_data)
                     if ev > self.__min_ev:
-                        # Check if Nairabet odds exceed maximum allowed
+                        # Check if sporty odds exceed maximum allowed
                         if odds > self.__max_pinnacle_odds:
-                            logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                            logger.info(f"Sporty odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
                             continue
                         
                         # Calculate stake for this specific market
@@ -3069,7 +3006,7 @@ class BetEngine(WebsiteOpener):
                     logger.info("No Pinnacle totals points available; using default small totals")
                     candidate_points = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
             else:
-                candidate_points = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
+                candidate_points = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7]
             
             for outcome in ["over", "under"]:
                 # Skip if we already found the opposite outcome
@@ -3091,9 +3028,9 @@ class BetEngine(WebsiteOpener):
                         
                         ev = self.__calculate_ev(odds, modified_shaped_data)
                         if ev > self.__min_ev:
-                            # Check if Nairabet odds exceed maximum allowed
+                            # Check if sportybet odds exceed maximum allowed
                             if odds > self.__max_pinnacle_odds:
-                                logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                                logger.info(f"sportybet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
                                 continue
                             
                             # Calculate stake for this specific market
@@ -3103,7 +3040,7 @@ class BetEngine(WebsiteOpener):
                             # Track this found outcome to avoid checking opposite outcomes
                             self.__add_found_outcome(game_id, "total", outcome)
         
-        # Check Asian Handicap markets (with mapping to Nairabet regular handicap)
+        # Check Asian Handicap markets (with mapping to sportybet regular handicap)
         for is_first_half in [False, True]:
             period_suffix = " (1st Half)" if is_first_half else ""
             logger.info(f"\033[1m\033[1;36mChecking handicap markets{period_suffix} for {home_team} vs {away_team}\033[0m")
@@ -3124,17 +3061,17 @@ class BetEngine(WebsiteOpener):
                     if not base_points:
                         logger.info("No Pinnacle spread points available; using default scan points")
                         base_points = [0.5, 1.5, 2.5, 3.5, 4.5]
-                    # Expand to both negative and positive to match Nairabet sides
+                    # Expand to both negative and positive to match sportybet sides
                     candidate_points = sorted({round(float(p), 2) for p in base_points} | {round(-float(p), 2) for p in base_points})
                 else:
-                    candidate_points = [-4.5, -3.5, -2.5, -1.5, 0.5, 1.5, 2.5, 3.5, 4.5]
+                    candidate_points = [-5.5, -5, -4.5, -4, -3.5, -3, -2.5,-2, -1.5, -1, 0.5,1, 1.5, 2,2.5,3, 3.5,4, 4.5, 5.5]
 
                 for points in candidate_points:
-                    # Map Pinnacle Asian Handicap to Nairabet regular handicap (skip mapping for basketball)
-                    nairabet_points = points if is_basketball else self.__map_asian_handicap_to_nairabet(points)
-                    logger.info(f"Nairabet points: {nairabet_points}")
+                    # Map Pinnacle Asian Handicap to sportybet regular handicap (skip mapping for basketball)
+                    sportybet_points = points if is_basketball else self.__map_asian_handicap_to_sportybet(points)
+                    logger.info(f"sportybet points: {sportybet_points}")
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
-                        event_details, "spread", nairabet_points, outcome, is_first_half, sport_id, home_team, away_team
+                        event_details, "spread", sportybet_points, outcome, is_first_half, sport_id, home_team, away_team
                     )
                     if bet_code and odds:
                         # Create modified shaped data for this specific market
@@ -3148,15 +3085,15 @@ class BetEngine(WebsiteOpener):
                         
                         ev = self.__calculate_ev(odds, modified_shaped_data)
                         if ev > self.__min_ev:
-                            # Check if Nairabet odds exceed maximum allowed
+                            # Check if sportybet odds exceed maximum allowed
                             if odds > self.__max_pinnacle_odds:
-                                logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                                logger.info(f"sportybet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
                                 continue
                             
                             # Calculate stake for this specific market
                             stake = self.__calculate_stake_for_market(odds, modified_shaped_data, self.__config["bet_settings"]["bankroll"])
-                            # Store the Nairabet points for actual betting, but use Pinnacle points for EV display
-                            available_markets.append(("spread", outcome, odds, nairabet_points, ev, is_first_half, stake))
+                            # Store the sportybet points for actual betting, but use Pinnacle points for EV display
+                            available_markets.append(("spread", outcome, odds, sportybet_points, ev, is_first_half, stake))
                             
                             # Track this found outcome to avoid checking opposite outcomes
                             self.__add_found_outcome(game_id, "spread", outcome)
@@ -3186,9 +3123,9 @@ class BetEngine(WebsiteOpener):
                     
                     ev = self.__calculate_ev(odds, modified_shaped_data)
                     if ev > self.__min_ev:
-                        # Check if Nairabet odds exceed maximum allowed
+                        # Check if sportybet odds exceed maximum allowed
                         if odds > self.__max_pinnacle_odds:
-                            logger.info(f"Nairabet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
+                            logger.info(f"sportybet odds {odds:.2f} exceeds maximum allowed {self.__max_pinnacle_odds:.2f}, skipping bet")
                             continue
                         
                         # Calculate stake for this specific market
@@ -3236,7 +3173,7 @@ class BetEngine(WebsiteOpener):
             
             logger.info(f"Processing new game: {home_team} vs {away_team}")
             
-            # Step 1: Search for the event on Nairabet
+            # Step 1: Search for the event on sportybet
             logger.info(f"Searching for event: {home_team} vs {away_team}")
             event_id = self.__search_event(home_team, away_team, pinnacle_start_time)
             if not event_id:
@@ -3328,10 +3265,10 @@ class BetEngine(WebsiteOpener):
 
     def __find_market_bet_code_with_points(self, event_details, line_type, points, outcome, is_first_half=False, sport_id=1, home_team=None, away_team=None):
         """
-        Find the appropriate bet code in the Nairabet event details and return the adjusted points value
+        Find the appropriate bet code in the sportybet event details and return the adjusted points value
         
         Parameters:
-        - event_details: The event details from Nairabet
+        - event_details: The event details from sportybet
         - line_type: The type of bet (spread, moneyline, total)
         - points: The points value for the bet
         - outcome: The outcome (home, away, draw, over, under)
@@ -3341,333 +3278,101 @@ class BetEngine(WebsiteOpener):
         Returns:
         - Tuple of (bet_code, odds, adjusted_points)
         """
-        # logger.info(f"sport id {sport_id}")
-        logger.info(f"Finding market for Game: {home_team} vs {away_team}: {line_type} - {outcome} - {points} - First Half: {is_first_half} - Sport: {'Basketball' if sport_id == 3 or sport_id == '3' else 'Soccer'}")
-        
-        # Handle new Nairabet API structure
-        if "marketGroups" in event_details:
-            # New API structure - extract markets from marketGroups
-            all_markets = []
-            first_half_markets = []
-            
-            for group in event_details.get("marketGroups", []):
-                group_name = group.get("name", "").lower()
-                group_markets = group.get("markets", [])
-                
-                # Check if this is a first half group
-                if "1st half" in group_name or "first half" in group_name:
-                    first_half_markets.extend(group_markets)
+        sport_info = event_details.get("sport") or {}
+        sport_name = (sport_info.get("name") or "").strip().lower()
+        is_basketball = sport_name == "basketball" or sport_id in ("2", "sr:sport:2")
+        logger.info(f"Finding market for Game: {home_team} vs {away_team}: {line_type} - {outcome} - {points} - First Half: {is_first_half} - Sport: {'Basketball' if is_basketball else 'Football'}")
+        markets_sp = event_details.get("markets") or []
+        if markets_sp:
+            fh_keys = ("first half", "1st half", "half-time", "halftime", "half time", "fh", "ht")
+            filtered_markets = []
+            for _m in markets_sp:
+                _n = (_m.get("name") or _m.get("desc") or "").strip().lower()
+                _g = (_m.get("group") or "").strip().lower()
+                _t = (_m.get("title") or "").strip().lower()
+                _s = f"{_n} {_g} {_t}"
+                _has_half = any(k in _s for k in fh_keys)
+                if is_first_half and not _has_half:
+                    continue
+                if not is_first_half and _has_half:
+                    continue
+                filtered_markets.append(_m)
+            mn = ("1x2", "match result", "result")
+            tn = ("over/under", "total")
+            hn = ("asian handicap",)
+            dn = ("draw no bet", "dnb")
+            lt = line_type.lower()
+            if lt == "money_line":
+                for m in filtered_markets:
+                    name = (m.get("name")).strip().lower()
+                    if (is_basketball and name == "1x2") or name == "1x2" or (is_first_half and name == "1st half - 1x2"):
+                        mm = {"home": "home", "away": "away", "draw": "draw"}
+                        tgt = mm.get(outcome.lower())
+                        for o in m.get("outcomes", []):
+                            lbl = (o.get("desc") or "").strip().lower()
+                            if lbl == tgt:
+                                odds = o.get("odds") or o.get("value")
+                                return o.get("id"), float(odds), None
+            elif lt == "total":
+                rp = float(points) if points is not None else None
+                for m in filtered_markets:
+                    name = (m.get("name") or "").strip().lower()
+                    # Build exact target names based on sport and period
+                    if is_basketball:
+                        if is_first_half:
+                            target = "1st half - total"
+                        else:
+                            target = "over/under (incl. overtime)"
+                    else:
+                        if is_first_half:
+                            target = "1st half - over/under"
+                        else:
+                            target = "over/under"
+                    if name == target:
+                        for o in m.get("outcomes", []):
+                            txt = (o.get("desc") or "").strip().lower()
+                            mm = re.search(r"(over|under)\s*(\d+\.?\d*)", txt)
+                            if mm:
+                                side = mm.group(1)
+                                pts = float(mm.group(2))
+                                print(f"total points gotten {pts}")
+                                if side == outcome.lower() and rp is not None and abs(pts - rp) < 0.01:
+                                    odds = o.get("odds") or o.get("value")
+                                    return o.get("id"), float(odds), pts
+            elif lt == "spread":
+                # THIS IS DNB
+                if points is not None and abs(float(points)) < 0.01:
+                    for m in filtered_markets:
+                        name = (m.get("desc") or "").strip().lower()
+                        if any(k in name for k in dn):
+                            for o in m.get("outcomes", []):
+                                lbl = (o.get("desc") or "").strip().lower()
+                                if outcome.lower() == lbl:
+                                    odds = o.get("odds") or o.get("value")
+                                    return o.get("id"), float(odds), 0.0
                 else:
-                    all_markets.extend(group_markets)
-            
-            # Use appropriate markets based on is_first_half parameter
-            if is_first_half:
-                markets = first_half_markets
-                # logger.info(f"Using first half markets: {len(first_half_markets)} markets found")
-            else:
-                markets = all_markets
-                # logger.info(f"Using full match markets: {len(all_markets)} markets found")
-                
-        elif "markets" in event_details:
-            # Old API structure
-            markets = event_details["markets"]
+                    rp = float(points) if points is not None else None
+                    for m in filtered_markets:
+                        name = (m.get("desc") or "").strip().lower()
+                        if any(k in name for k in hn):
+                            for o in m.get("outcomes", []):
+                                txt = (o.get("desc") or "").strip().lower()
+                                sd = txt
+                                # if home_team and home_team.lower() in txt:
+                                #     sd = "home"
+                                # elif away_team and away_team.lower() in txt:
+                                #     sd = "away"
+                                mm = re.search(r"([+-]?\d+\.?\d*)", txt)
+                                if sd == outcome.lower() and mm and rp is not None:
+                                    pts = float(mm.group(1))
+                                    print(f"asian handicap points gotten {pts}")
+                                    if abs(pts - rp) < 0.01:
+                                        odds = o.get("odds") or o.get("value")
+                                        return o.get("id"), float(odds), pts
+            return None, None, None
+       
         else:
             logger.info("No markets found in event details")
-            return None, None, None
-
-        # Use different market names based on sport
-        is_basketball = (sport_id == "3" or sport_id == 3)
-        # logger.info(f"is basketball: {is_basketball}")
-        
-        # Determine the correct market descriptions based on sport and is_first_half
-        if is_first_half:
-            # First half market descriptions - use actual market IDs from new API
-            if is_basketball:
-                moneyline_market = "FH1X2"  # First Half 1X2 for basketball
-                total_market = "HTGOU_LS"   # Half time Goals - Under/Over
-                spread_market = "SHC"      # Handicap for basketball
-                dnb_market = "DNB"         # Draw No Bet (if available for first half)
-            else:
-                moneyline_market = "FH1X2"  # First Half 1X2
-                total_market = "HTGOU_LS"   # Half time Goals - Under/Over
-                spread_market = "HC"        # Handicap (if available for first half)
-                dnb_market = "DNB"         # Draw No Bet (if available for first half)
-        else:
-            # Full match market descriptions - use actual market IDs from new API
-            if is_basketball:
-                moneyline_market = "1x2WOOT"  # Match Winner 3 way W/O Overtime for basketball
-                total_market = "TGOU"         # Total Goals - Over/Under for basketball
-                spread_market = "SHC"         # Handicap for basketball
-                dnb_market = "DNB"            # Draw No Bet
-            else:
-                moneyline_market = "1x2"      # Regular 1X2 for other sports
-                total_market = "TGOU"         # Total Goals - Over/Under
-                spread_market = "HC"          # Handicap
-                dnb_market = "DNB"            # Draw No Bet
-        
-        # logger.info(f"Looking for markets: moneyline='{moneyline_market}', total='{total_market}', spread='{spread_market}', dnb='{dnb_market}'")
-
-        # Handle MONEYLINE bets (1X2 in Nairabet)
-        if line_type.lower() == "money_line":
-            # Find 1x2 market by ID
-            for market in markets:
-                market_id = market.get("id", "")
-                
-                # Check by market ID (new API)
-                if market_id == moneyline_market:
-                    # Map outcome to Nairabet format
-                    outcome_map = {"home": "HOME", "away": "AWAY", "draw": "DRAW"}
-                    if outcome.lower() not in outcome_map:
-                        logger.info(f"Invalid outcome for moneyline: {outcome}")
-                        continue
-                        
-                    target_outcome_id = outcome_map[outcome.lower()]
-                    
-                    # Find matching outcome
-                    for market_outcome in market.get("outcomes", []):
-                        if market_outcome.get("id") == target_outcome_id:
-                            odds = market_outcome.get("value", market_outcome.get("odds", 0))
-                            logger.info(f"Found moneyline market: {market.get('name', market.get('description', ''))} outcome {target_outcome_id} with odds {odds}")
-                            return market_outcome["id"], float(odds), None
-            
-            logger.info(f"No matching moneyline market found for {outcome}")
-            return None, None, None
-            
-        # Handle TOTAL bets (Over/Under in Nairabet)
-        elif line_type.lower() == "total":
-            # Map outcome to Nairabet format
-            outcome_map = {"over": "OVER", "under": "UNDER"}
-            if outcome.lower() not in outcome_map:
-                logger.info(f"Invalid outcome for total: {outcome}")
-                return None, None, None
-                
-            target_outcome_id = outcome_map[outcome.lower()]
-            original_points = float(points)
-            
-            # Round to nearest 0.5 increment first (e.g., 1.25 -> 1.5, 1.3 -> 1.5, 1.7 -> 1.5)
-            rounded_points = round(original_points * 2) / 2
-            # logger.info(f"Original points: {original_points}, Rounded to nearest 0.5: {rounded_points}")
-            
-            # Generate alternate lines to search for (4 steps up and down with 0.5 increments)
-            alternate_points = []
-            
-            # Add rounded target first
-            alternate_points.append(rounded_points)
-            
-            # Add 4 steps upward (0.5, 1.0, 1.5, 2.0 higher)
-            # FOR NOW REM OVE THIS SINCE WE ARE MANUALLY PASSING IT
-            # for i in range(1, 5):
-            #     alternate_points.append(rounded_points + (i * 0.5))
-            
-            # Add 4 steps downward (0.5, 1.0, 1.5, 2.0 lower), but not below 0
-            # for i in range(1, 5):
-            #     lower_point = rounded_points - (i * 0.5)
-            #     if lower_point >= 0:  # Don't go below 0
-            #         alternate_points.append(lower_point)
-            
-            # logger.info(f"Searching for total points in order: {alternate_points}")
-            
-            # Find Over/Under markets and look for the closest points from our alternate list
-            best_match = None
-            best_diff = float('inf')
-            
-            for market in markets:
-                market_id = market.get("id", "")
-                market_name = market.get("name", "")
-                
-                # Check by market ID first (new API)
-                if market_id == total_market:
-                    for market_outcome in market.get("outcomes", []):
-                        outcome_desc = market_outcome.get("name", market_outcome.get("description", ""))
-                        outcome_id = market_outcome.get("id")
-                        
-                        # Check if this outcome matches our target (over/under)
-                        if outcome_id == target_outcome_id:
-                            # Extract points from description (e.g., "Over 2.5" -> 2.5)
-                            try:
-                                if "over" in outcome_desc.lower():
-                                    market_points = float(outcome_desc.lower().replace("over", "").strip())
-                                elif "under" in outcome_desc.lower():
-                                    market_points = float(outcome_desc.lower().replace("under", "").strip())
-                                else:
-                                    continue
-                                
-                                # Check if this market point is in our alternate points list
-                                for alt_point in alternate_points:
-                                    diff = abs(market_points - alt_point)
-                                    if diff < 0.01:  # Match found (allowing for floating point precision)
-                                        # Calculate priority based on distance from original target
-                                        priority_diff = abs(market_points - original_points)
-                                        
-                                        if priority_diff < best_diff:
-                                            best_diff = priority_diff
-                                            odds = market_outcome.get("value", market_outcome.get("odds", 0))
-                                            best_match = {
-                                                "id": outcome_id,
-                                                "odds": float(odds),
-                                                "points": market_points,
-                                                "description": outcome_desc
-                                            }
-                                        break  # Found match in alternate points, move to next outcome
-                                    
-                            except (ValueError, AttributeError):
-                                continue
-            
-            if best_match:
-                if best_match["points"] != original_points:
-                    logger.info(f"Exact total {original_points} not found, using closest: {best_match['points']}")
-                logger.info(f"Found total market: {best_match['description']} with odds {best_match['odds']}")
-                return best_match["id"], best_match["odds"], best_match["points"]
-            
-            logger.info(f"No matching total market found for {points} {outcome} or alternate lines")
-            return None, None, None
-            
-        # Handle SPREAD bets (Asian Handicap in Nairabet)
-        elif line_type.lower() == "spread":
-            original_points = float(points)
-            
-            # Check if handicap is 0 - if so, use DNB (Draw No Bet) market instead
-            if abs(original_points) < 0.01:  # Using small threshold for floating point comparison
-                logger.info(f"Handicap is 0, looking for DNB (Draw No Bet) market instead of Asian Handicap")
-                
-                # Map outcome to Nairabet format for DNB (based on actual API structure)
-                outcome_map = {"home": "HOME", "away": "AWAY"}
-                if outcome.lower() not in outcome_map:
-                    logger.info(f"Invalid outcome for DNB: {outcome}")
-                    return None, None, None
-                    
-                target_outcome_id = outcome_map[outcome.lower()]
-                
-                # Look for DNB market by ID
-                for market in markets:
-                    market_id = market.get("id", "")
-                    market_name = market.get("name", "")
-                    
-                    # Check by market ID first (new API)
-                    if market_id == dnb_market:
-                        # Find matching outcome
-                        for market_outcome in market.get("outcomes", []):
-                            if market_outcome.get("id") == target_outcome_id:
-                                odds = market_outcome.get("value", market_outcome.get("odds", 0))
-                                logger.info(f"Found DNB market: {market.get('name', market.get('description', ''))} outcome {target_outcome_id} with odds {odds}")
-                                return market_outcome["id"], float(odds), 0.0  # Return 0.0 as adjusted points
-                
-                logger.info(f"No matching DNB market found for {outcome}")
-                return None, None, None
-            
-            # Original Asian Handicap logic for non-zero handicaps
-            # Map outcome to Nairabet format for Asian Handicap
-            outcome_map = {"home": "HOME", "away": "AWAY"}
-            if outcome.lower() not in outcome_map:
-                logger.info(f"Invalid outcome for handicap: {outcome}")
-                return None, None, None
-                
-            target_outcome_id = outcome_map[outcome.lower()]
-            
-            # Round to nearest 0.5 increment first (e.g., -0.25 -> -0.5, +1.3 -> +1.5, -1.7 -> -1.5)
-            rounded_points = round(original_points * 2) / 2
-            # logger.info(f"Original handicap: {original_points}, Rounded to nearest 0.5: {rounded_points}")
-            
-            # Generate alternate handicap lines to search for (4 steps in each direction with 0.5 increments)
-            alternate_points = []
-            
-            # Add rounded target first
-            alternate_points.append(rounded_points)
-            
-            # Add 4 steps in positive direction (towards 0 if negative, away from 0 if positive)
-            # if rounded_points < 0:
-            #     # For negative handicaps, go towards 0 (less negative)
-            #     for i in range(1, 5):
-            #         new_point = rounded_points + (i * 0.5)
-            #         if new_point <= 0:  # Don't cross zero for negative handicaps
-            #             alternate_points.append(new_point)
-            # else:
-            #     # For positive handicaps, go away from 0 (more positive)
-            #     for i in range(1, 5):
-            #         alternate_points.append(rounded_points + (i * 0.5))
-            
-            # # Add 4 steps in negative direction (away from 0 if negative, towards 0 if positive)
-            # if rounded_points < 0:
-            #     # For negative handicaps, go away from 0 (more negative)
-            #     for i in range(1, 5):
-            #         alternate_points.append(rounded_points - (i * 0.5))
-            # else:
-            #     # For positive handicaps, go towards 0 (less positive)
-            #     for i in range(1, 5):
-            #         new_point = rounded_points - (i * 0.5)
-            #         if new_point >= 0:  # Don't cross zero for positive handicaps
-            #             alternate_points.append(new_point)
-            
-            # logger.info(f"Searching for handicap points in order: {alternate_points}")
-            
-            # Find Asian Handicap markets and look for the closest points from our alternate list
-            best_match = None
-            best_diff = float('inf')
-            
-            for market in markets:
-                market_id = market.get("id", "")
-                market_name = market.get("name", "")
-                
-                # Check by market ID first (new API)
-                if market_id == spread_market:
-                    # logger.info(f"Found spread market: {market.get('name', market.get('description', ''))}")
-                    for market_outcome in market.get("outcomes", []):
-                        outcome_desc = market_outcome.get("name", market_outcome.get("description", ""))
-                        outcome_id = market_outcome.get("id")
-                        
-                        # Check if this outcome matches our target (home/away)
-                        if outcome_id == target_outcome_id:
-                            # logger.info(f"Found spread market outcome: {outcome_id}")
-                            # Use handicap field directly from API response
-                            try:
-                                handicap_value = market_outcome.get("handicap")
-                                if handicap_value is not None:
-                                    market_points = float(handicap_value)
-                                    # logger.info(f"Found handicap from API field: {market_points}")
-                                else:
-                                    # Fallback to parsing description if handicap field not available
-                                    import re
-                                    match = re.search(r'[(\[]([+-]?\d+\.?\d*)[)\]]', outcome_desc)
-                                    if match:
-                                        market_points = float(match.group(1))
-                                        # logger.info(f"Found handicap from description: {market_points}")
-                                    else:
-                                        continue
-                                
-                                display_points = market_points
-                                
-                                # Check if this market point is in our alternate points list
-                                for alt_point in alternate_points:
-                                    diff = abs(display_points - alt_point)
-                                    if diff < 0.01:  # Match found (allowing for floating point precision)
-                                        # Calculate priority based on distance from original target
-                                        priority_diff = abs(display_points - original_points)
-                                        
-                                        if priority_diff < best_diff:
-                                            best_diff = priority_diff
-                                            odds = market_outcome.get("value", market_outcome.get("odds", 0))
-                                            best_match = {
-                                                "id": outcome_id,
-                                                "odds": float(odds),
-                                                "points": display_points,
-                                                "description": outcome_desc
-                                            }
-                                        break  # Found match in alternate points, move to next outcome
-                                        
-                            except (ValueError, AttributeError):
-                                continue
-            
-            if best_match:
-                if best_match["points"] != original_points:
-                    logger.info(f"Exact handicap {original_points} not found, using closest: {best_match['points']}")
-                logger.info(f"Found handicap market: {best_match['description']} with odds {best_match['odds']}")
-                return best_match["id"], best_match["odds"], best_match["points"]
-            
-            logger.info(f"No matching handicap market found for {points} {outcome} or alternate lines")
-            return None, None, None
-        
-        else:
-            logger.info(f"Unsupported line type: {line_type}")
             return None, None, None
             
     def __extract_points_from_key(self, key):
@@ -3709,10 +3414,10 @@ class BetEngine(WebsiteOpener):
 
     def __place_bet(self, event_details, line_type, outcome, odds, modified_shaped_data, is_first_half=False, stake=None):
         """
-        Place a bet on Nairabet
+        Place a bet on sportybet
         
         Parameters:
-        - event_details: Event details from Nairabet
+        - event_details: Event details from sportybet
         - line_type: Type of bet (money_line, total, spread)
         - outcome: Outcome to bet on
         - odds: The decimal odds for the bet
@@ -3728,10 +3433,11 @@ class BetEngine(WebsiteOpener):
         
         if immediate_placement:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Placing Nairabet bet immediately: {line_type}{period_suffix} - {outcome} with odds {odds}")
+            logger.info(f"Placing sportybet bet immediately: {line_type}{period_suffix} - {outcome} with odds {odds}")
             
-            # Extract sport_id from event_details
-            sport_id = event_details.get("sportId", "1")
+            # Extract sport_id from event_details.sport
+            sport_info = event_details.get("sport") or {}
+            sport_id = sport_info.get("id") or ""
             
             logger.info(f"Sport ID: {sport_id}")
             # Create bet data
@@ -3760,7 +3466,7 @@ class BetEngine(WebsiteOpener):
                 return False
         else:
             period_suffix = " (1st Half)" if is_first_half else ""
-            logger.info(f"Queueing Nairabet bet: {line_type}{period_suffix} - {outcome} with odds {odds}")
+            logger.info(f"Queueing sportybet bet: {line_type}{period_suffix} - {outcome} with odds {odds}")
             
             # Add bet to queue
             bet_data = {
@@ -3782,10 +3488,10 @@ class BetEngine(WebsiteOpener):
         DEPRECATED: Use __find_market_bet_code_with_points instead
         This method is kept for backward compatibility.
         
-        Find the appropriate bet code in the Nairabet event details
+        Find the appropriate bet code in the sportybet event details
         
         Parameters:
-        - event_details: The event details from Nairabet
+        - event_details: The event details from sportybet
         - line_type: The type of bet (spread, moneyline, total)
         - points: The points value for the bet
         - outcome: The outcome (home, away, draw, over, under)
@@ -3837,7 +3543,7 @@ class BetEngine(WebsiteOpener):
 
     def search_event(self, home_team, away_team, pinnacle_start_time=None):
         """
-        Public method to search for an event on Nairabet
+        Public method to search for an event on sportybet
         
         Parameters:
         - home_team: Home team name
@@ -3851,7 +3557,7 @@ class BetEngine(WebsiteOpener):
     
     def get_event_details(self, event_id):
         """
-        Public method to get detailed information about an event from Nairabet
+        Public method to get detailed information about an event from sportybet
         
         Parameters:
         - event_id: The event ID to get details for
@@ -3861,9 +3567,9 @@ class BetEngine(WebsiteOpener):
         """
         return self.__get_event_details(event_id)
     
-    def generate_nairabet_bet_url(self, event_details):
+    def generate_sportybet_bet_url(self, event_details):
         """
-        Public method to generate Nairabet betting URL based on event details
+        Public method to generate sportybet betting URL based on event details
         
         Parameters:
         - event_details: Event details dictionary
@@ -3871,14 +3577,14 @@ class BetEngine(WebsiteOpener):
         Returns:
         - Betting URL string or None if generation fails
         """
-        return self.__generate_nairabet_bet_url(event_details)
+        return self.__generate_sportybet_bet_url(event_details)
     
     def find_market_bet_code_with_points(self, event_details, line_type, points, outcome, is_first_half=False, sport_id=1, home_team=None, away_team=None):
         """
-        Public method to find the appropriate bet code in the Nairabet event details
+        Public method to find the appropriate bet code in the sportybet event details
         
         Parameters:
-        - event_details: The event details from Nairabet
+        - event_details: The event details from sportybet
         - line_type: The type of bet (spread, moneyline, total)
         - points: The points value for the bet
         - outcome: The outcome (home, away, draw, over, under)
@@ -3948,7 +3654,7 @@ class BetEngine(WebsiteOpener):
             
             # Step 3: Generate betting URL
             print(f"\n3. Generating betting URL...")
-            bet_url = self.generate_nairabet_bet_url(event_details)
+            bet_url = self.generate_sportybet_bet_url(event_details)
             
             if not bet_url:
                 print("❌ Could not generate betting URL")
@@ -4153,7 +3859,7 @@ class BetEngine(WebsiteOpener):
         Calculate the stake amount based on Kelly criterion
         
         Parameters:
-        - bet_odds: The decimal odds offered by Nairabet
+        - bet_odds: The decimal odds offered by sportybet
         - shaped_data: The data with prices and outcome information
         
         Returns:
@@ -4214,7 +3920,7 @@ class BetEngine(WebsiteOpener):
         Calculate the stake amount for a specific market based on pre-calculated EV data
         
         Parameters:
-        - bet_odds: The decimal odds offered by Nairabet
+        - bet_odds: The decimal odds offered by sportybet
         - shaped_data: The data with pre-calculated prices and outcome information
         
         Returns:
@@ -4274,7 +3980,7 @@ class BetEngine(WebsiteOpener):
         Calculate the stake amount based on Kelly criterion
         
         Parameters:
-        - bet_odds: The decimal odds offered by Nairabet
+        - bet_odds: The decimal odds offered by Sportybet
         - shaped_data: The data with prices and outcome information
         
         Returns:

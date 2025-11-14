@@ -1,0 +1,22 @@
+## Rule 2: Hybrid Rule (One Exact Match + One Similarity Match)
+
+**Priority:** Second (only executed if Rule 1 finds no matches)  
+**Condition:** One team matches exactly (normalized) AND the other team has ≥50% similarity
+
+### How It Works
+
+1. Calculates all possible similarity combinations:
+   - Query Team 1 vs Database Team 1
+   - Query Team 1 vs Database Team 2
+   - Query Team 2 vs Database Team 1
+   - Query Team 2 vs Database Team 2
+
+2. Checks for exact matches (normalized team names are identical)
+
+3. Applies hybrid rule if any of these conditions are met:
+   - **Case 1:** Query Team 1 = Database Team 1 (exact) AND Query Team 2 similarity with Database Team 2 ≥ 50%
+   - **Case 2:** Query Team 1 = Database Team 2 (exact) AND Query Team 2 similarity with Database Team 1 ≥ 50%
+   - **Case 3:** Query Team 2 = Database Team 1 (exact) AND Query Team 1 similarity with Database Team 2 ≥ 50%
+   - **Case 4:** Query Team 2 = Database Team 2 (exact) AND Query Team 1 similarity with Database Team 1 ≥ 50%
+
+   Ignore all that talk of rule 1
