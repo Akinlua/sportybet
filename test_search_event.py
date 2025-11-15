@@ -32,6 +32,14 @@ def run_search_tests():
         logger.info(f"Found eventId: {eid}")
         details = be.get_event_details(eid)
         if details:
+            sport = details.get("sport") or {}
+            sport_name = (sport.get("name") or "").strip()
+            category = sport.get("category") or {}
+            category_name = (category.get("name") or "").strip()
+            tournament = category.get("tournament") or {}
+            tournament_name = (tournament.get("name") or "").strip()
+            markets = details.get("markets") or []
+            logger.info(f"Details: {details.get('homeTeam')} vs {details.get('awayTeam')} | sport={sport_name} | category={category_name} | tournament={tournament_name} | markets={len(markets)}")
             url = be.generate_sportybet_bet_url(details)
             logger.info(f"URL: {url}")
             results.append((home, away, eid))
