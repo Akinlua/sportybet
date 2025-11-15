@@ -922,7 +922,7 @@ class BetEngine(WebsiteOpener):
                             break
                 
                 # logger.info(f"Searching with URL: {search_url} and params: {params}")
-                response = requests.get(search_url, params=params, headers=headers, proxies=proxies, timeout=12)
+                response = requests.get(search_url, params=params, headers=headers, timeout=12)
                 
                 # logger.info(f"Response status: {response.status_code}")
                 # print(f"Response content: {response.text[:500]}...")
@@ -1027,7 +1027,7 @@ class BetEngine(WebsiteOpener):
                         logger.info(f"Using proxy for event details: {acc.proxy}")
                         break
             
-            response = requests.get(details_url, params=params, headers=headers, proxies=proxies, timeout=10)
+            response = requests.get(details_url, params=params, headers=headers, timeout=10)
             response.raise_for_status()
             
             payload = response.json() or {}
