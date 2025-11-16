@@ -333,6 +333,13 @@ class BetEngine(WebsiteOpener):
         while self.__popup_handler_running and self.__browser_open:
             try:
                 if hasattr(self, 'driver') and self.driver:
+                    try:
+                        ap_yes = self.driver.find_element(By.CSS_SELECTOR, "[data-op='account-protection-yes-its-me'], [data-cms-key='yes_it_is_me'][data-cms-page='account_protection']")
+                        ap_yes.click()
+                        logger.info("🖱️ Clicked Account Protection 'Yes, it's me'")
+                        await asyncio.sleep(0.5)
+                    except:
+                        pass
                     # Handle Accept/Cookie popups
                     # try:
                     #     accept_button = self.driver.find_element(By.XPATH, "//button[contains(text(),'Accept')]")
@@ -343,19 +350,19 @@ class BetEngine(WebsiteOpener):
                     #     pass
                     
                     # Handle Kumulos confirmation popups
-                    try:
-                        confirm_button = self.driver.find_element(By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel")
-                        confirm_button.click()
-                        logger.info("🖱️ Clicked Kumulos confirm button")
-                        await asyncio.sleep(0.5)
-                    except:
-                        try:
-                            cancel_button = self.driver.find_element(By.CSS_SELECTOR, ".kumulos-action-button-cancel")
-                            cancel_button.click()
-                            logger.info("🖱️ Clicked Kumulos cancel button")
-                            await asyncio.sleep(0.5)
-                        except:
-                            pass
+                    # try:
+                    #     confirm_button = self.driver.find_element(By.CSS_SELECTOR, "button.kumulos-action-button.kumulos-action-button-cancel")
+                    #     confirm_button.click()
+                    #     logger.info("🖱️ Clicked Kumulos confirm button")
+                    #     await asyncio.sleep(0.5)
+                    # except:
+                    #     try:
+                    #         cancel_button = self.driver.find_element(By.CSS_SELECTOR, ".kumulos-action-button-cancel")
+                    #         cancel_button.click()
+                    #         logger.info("🖱️ Clicked Kumulos cancel button")
+                    #         await asyncio.sleep(0.5)
+                    #     except:
+                    #         pass
                     
                     # # Remove background mask if present
                     # try:
