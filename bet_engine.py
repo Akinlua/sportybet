@@ -1241,6 +1241,7 @@ class BetEngine(WebsiteOpener):
                 logger.info(f"working on dummy veirtuals now2")
                 low_candidates = self.__get_low_odds_virtual_candidates(account, max_odds=1.2, limit=5)
                 if low_candidates:
+                    logger.info(f"Found {len(low_candidates)} low-odds virtual candidates")
                     pick_count = getattr(self, "_virtual_pick_toggle", 1)
                     sel = low_candidates[:min(len(low_candidates), pick_count)]
                     for target in sel:
