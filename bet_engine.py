@@ -1238,31 +1238,38 @@ class BetEngine(WebsiteOpener):
             
             # Navigate to a low-odds virtual event URL before entering stake
             try:
+                logger.info(f"working on dummy veirtuals now2")
                 low_candidates = self.__get_low_odds_virtual_candidates(account, max_odds=1.2, limit=5)
                 if low_candidates:
-                    target = low_candidates[0]
-                    self.open_url(target["url"])
+                    pick_count = getattr(self, "_virtual_pick_toggle", 1)
+                    sel = low_candidates[:min(len(low_candidates), pick_count)]
+                    for target in sel:
+                        self.open_url(target["url"])
+                        try:
+                            self.__wait_for_market_content(timeout_seconds=20)
+                            WebDriverWait(self.driver, 10).until(
+                                lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
+                            )
+                        except Exception:
+                            pass
+                        me2, _o2 = self.__get_market_selector(target["market_type"], target["outcome"], target.get("points"), False, target.get("home"), target.get("away"))
+                        if me2:
+                            try:
+                                WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(me2))
+                                me2.click()
+                                logger.info(f"Clicked backup low-odds market: {target['market_type']} - {target['outcome']} - {target.get('points')}")
+                            except Exception:
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", me2)
+                                    logger.info("JavaScript clicked backup market")
+                                except Exception:
+                                    actions = ActionChains(self.driver)
+                                    actions.move_to_element(me2).click().perform()
+                                    logger.info("ActionChains clicked backup market")
                     try:
-                        self.__wait_for_market_content(timeout_seconds=20)
-                        WebDriverWait(self.driver, 10).until(
-                            lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
-                        )
+                        self._virtual_pick_toggle = 2 if pick_count == 1 else 1
                     except Exception:
                         pass
-                    me2, _o2 = self.__get_market_selector(target["market_type"], target["outcome"], target.get("points"), False, target.get("home"), target.get("away"))
-                    if me2:
-                        try:
-                            WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(me2))
-                            me2.click()
-                            logger.info(f"Clicked backup low-odds market: {target['market_type']} - {target['outcome']} - {target.get('points')}")
-                        except Exception:
-                            try:
-                                self.driver.execute_script("arguments[0].click();", me2)
-                                logger.info("JavaScript clicked backup market")
-                            except Exception:
-                                actions = ActionChains(self.driver)
-                                actions.move_to_element(me2).click().perform()
-                                logger.info("ActionChains clicked backup market")
             except Exception:
                 pass
 
