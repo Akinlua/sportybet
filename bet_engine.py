@@ -1332,7 +1332,8 @@ class BetEngine(WebsiteOpener):
                     )
                     try:
                         game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
-                        fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + ".png"
+                        timestamp = time.strftime("%Y%m%d-%H%M%S")
+                        fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + f"_{timestamp}.png"
                         self.driver.save_screenshot(fname)
                         logger.info(f"Saved pre-confirm screenshot: {fname}")
                     except Exception:
