@@ -1437,7 +1437,7 @@ class BetEngine(WebsiteOpener):
                         return False
                         
                 except Exception as e:
-                    logger.error(f"No success confirmation found: {e}")
+                    logger.error(f"❌ No success confirmation found: {e}")
                     # Take screenshot of failed bet state
                     try:
                         timestamp = time.strftime("%Y%m%d-%H%M%S")
