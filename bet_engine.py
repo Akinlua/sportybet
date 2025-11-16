@@ -1678,6 +1678,7 @@ class BetEngine(WebsiteOpener):
                             "odds": best_info["odds"]
                         })
             candidates.sort(key=lambda x: x.get("odds", 9999))
+            logger.info(f"Found {len(candidates)} candidates for {home} vs {away}")
             return candidates[:limit]
         except Exception:
             return []
