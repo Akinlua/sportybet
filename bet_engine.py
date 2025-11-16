@@ -1323,6 +1323,13 @@ class BetEngine(WebsiteOpener):
                         EC.presence_of_element_located((By.CSS_SELECTOR, "button.af-button.af-button--primary span span[data-cms-key='confirm']"))
                     )
                     try:
+                        game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
+                        fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + ".png"
+                        self.driver.save_screenshot(fname)
+                        logger.info(f"Saved pre-confirm screenshot: {fname}")
+                    except Exception:
+                        pass
+                    try:
                         self.driver.execute_script("arguments[0].closest('button').click();", confirm_span)
                         logger.info("Clicked confirm button")
                     except Exception:
