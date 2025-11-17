@@ -628,7 +628,7 @@ class BetEngine(WebsiteOpener):
                 "Origin": "https://www.sportybet.com"
             }
             
-            response = requests.get(balance_url, headers=headers, cookies=cookies, proxies=account.get_proxies())
+            response = requests.get(balance_url, headers=headers, cookies=cookies)
             
             if response.status_code == 200:
                 balance_data = response.json()
