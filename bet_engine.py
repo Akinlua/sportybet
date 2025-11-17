@@ -1247,6 +1247,7 @@ class BetEngine(WebsiteOpener):
             try:
                 logger.info(f"working on dummy veirtuals now2")
                 low_candidates = self.__get_low_odds_virtual_candidates(account, max_odds=1.2, limit=5)
+                logger.info(f"Candidates: {low_candidates}")
                 if low_candidates:
                     logger.info(f"Found {len(low_candidates)} low-odds virtual candidates")
                     pick_count = getattr(self, "_virtual_pick_toggle", 1)
@@ -1584,7 +1585,9 @@ class BetEngine(WebsiteOpener):
                 "Referer": "https://www.sportybet.com/ng/",
                 "Origin": "https://www.sportybet.com"
             }
-            resp = requests.get(url, headers=headers, cookies=cookies, proxies=account.get_proxies())
+            resp = requests.get(url, headers=headers, cookies=cookies)
+            logger.info(f"Response status code: {resp.status_code}")
+
             if resp.status_code != 200:
                 return []
             data = resp.json().get("data", {})
