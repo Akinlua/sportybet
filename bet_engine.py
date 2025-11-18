@@ -582,12 +582,12 @@ class BetEngine(WebsiteOpener):
         """Check and log the current IP address being used"""
         try:
             # Use a service that returns the client's IP address
-            ip_check_url = "https://api.ipify.org?format=json"
+            ip_check_url = "https://ip.decodo.com/json"
             response = requests.get(ip_check_url, proxies=proxy_url)
             if response.status_code == 200:
                 ip_data = response.json()
-                if "ip" in ip_data:
-                    ip_address = ip_data["ip"]
+                if "ip" in ip_data["proxy"]:
+                    ip_address = ip_data["proxy"]["ip"]
                     if using_proxy:
                         logger.info(f"✅ Using proxy - Current IP address: {ip_address} {account.username} {account.proxy}")
                     else:
@@ -681,6 +681,24 @@ class BetEngine(WebsiteOpener):
             # Initialize browser with account-specific proxy
             self._initialize_browser_if_needed(account)
             
+            # Fast-path: try persisted cookies to verify session via balance before hitting login page
+            try:
+                return True
+                # profile_base = os.path.join(os.getcwd(), "profiles")
+                # safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+                # cookie_file = os.path.join(profile_base, safe_name, "cookies.json")
+                # if os.path.exists(cookie_file):
+                #     with open(cookie_file, "r") as f:
+                #         stored = json.load(f)
+                #     if stored:
+                #         account.set_cookie_jar(stored)
+                #         bal = self.__fetch_account_balance(account)
+                #         if bal and bal > 0:
+                #             logger.info(f"Session valid via persisted cookies for {account.username}; skipping login")
+                #             return True
+            except Exception:
+                pass
+            
             # Initialize CAPTCHA solver
             # captcha_config = self.__config.get("captcha", {})
             # if captcha_config.get("enabled", True):
@@ -690,15 +708,42 @@ class BetEngine(WebsiteOpener):
             #     print("⚠️  CAPTCHA solving is disabled in configuration")
             #     captcha_solver = None
 
+            # # Navigate to sportybet login page
+            login_url = f"{self.__bet_host}"
+            try:
+                self.driver.get(login_url)
+                logger.info(f"Navigated to login page: {login_url}")
+            except Exception as get_err:
+                msg = str(get_err).lower()
+                if ("invalid session id" in msg or "disconnected" in msg):
+                    logger.error("Invalid Selenium session detected. Restarting browser and retrying login navigation...")
+                    self.__restart_browser(account)
+                    self.driver.get(login_url)
+                    logger.info(f"Navigated to login page after restart: {login_url}")
+                else:
+                    raise
+
             # Check if already logged in first by presence of header 'Account' button
             try:
-                WebDriverWait(self.driver, 5).until(
+                WebDriverWait(self.driver, 60).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m-list"))
                 )
                 logger.info(f"Already logged in for account: {account.username}")
                 # Get cookies from selenium
                 selenium_cookies = self.driver.get_cookies()
                 account.set_cookie_jar(selenium_cookies)
+                
+                try:
+                    profile_base = os.path.join(os.getcwd(), "profiles")
+                    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+                    os.makedirs(os.path.join(profile_base, safe_name), exist_ok=True)
+                    cookie_file = os.path.join(profile_base, safe_name, "cookies.json")
+                    to_save = {c["name"]: c["value"] for c in selenium_cookies if isinstance(c, dict) and "name" in c and "value" in c}
+                    with open(cookie_file, "w") as f:
+                        json.dump(to_save, f)
+                    logger.info(f"Persisted cookies for {account.username} to {cookie_file}")
+                except Exception:
+                    pass
                 
                 # Fetch account balance after successful login
                 balance = self.__fetch_account_balance(account)
@@ -717,19 +762,19 @@ class BetEngine(WebsiteOpener):
                 # Continue with login process
             
             # Navigate to sportybet login page
-            login_url = f"{self.__bet_host}"
-            try:
-                self.driver.get(login_url)
-                logger.info(f"Navigated to login page: {login_url}")
-            except Exception as get_err:
-                msg = str(get_err).lower()
-                if ("invalid session id" in msg or "disconnected" in msg):
-                    logger.error("Invalid Selenium session detected. Restarting browser and retrying login navigation...")
-                    self.__restart_browser(account)
-                    self.driver.get(login_url)
-                    logger.info(f"Navigated to login page after restart: {login_url}")
-                else:
-                    raise
+            # login_url = f"{self.__bet_host}"
+            # try:
+            #     self.driver.get(login_url)
+            #     logger.info(f"Navigated to login page: {login_url}")
+            # except Exception as get_err:
+            #     msg = str(get_err).lower()
+            #     if ("invalid session id" in msg or "disconnected" in msg):
+            #         logger.error("Invalid Selenium session detected. Restarting browser and retrying login navigation...")
+            #         self.__restart_browser(account)
+            #         self.driver.get(login_url)
+            #         logger.info(f"Navigated to login page after restart: {login_url}")
+            #     else:
+            #         raise
             
             # Open login modal from header
             # try:
@@ -757,26 +802,49 @@ class BetEngine(WebsiteOpener):
             #     logger.error(f"Could not open login modal: {e}")
             
             # Find phone input
+            try:
+                self.driver.execute_script("document.querySelectorAll('.af-toast,.m-dialog,.m-modal,.m-balance-wrapper,.m-bablance-wrapper').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
+            except Exception:
+                pass
             phone_input = WebDriverWait(self.driver, 60).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='phone']"))
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "input[name='phone']"))
             )
-            phone_input.clear()
-            phone_input.send_keys(account.username)
+            try:
+                phone_input.clear()
+                phone_input.send_keys(account.username)
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].value=arguments[1]; arguments[0].dispatchEvent(new Event('input')); arguments[0].dispatchEvent(new Event('change'));", phone_input, account.username)
+                except Exception:
+                    pass
             logger.info(f"📱 Entered username/phone/email: {account.username}")
             
             # Find password input
             password_input = WebDriverWait(self.driver, 60).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='psd']"))
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "input[name='psd']"))
             )
-            password_input.clear()
-            password_input.send_keys(account.password)
+            try:
+                password_input.clear()
+                password_input.send_keys(account.password)
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].value=arguments[1]; arguments[0].dispatchEvent(new Event('input')); arguments[0].dispatchEvent(new Event('change'));", password_input, account.password)
+                except Exception:
+                    pass
             logger.info(f"🔑 Entered password")
             
             # Find and click login button
             login_button = WebDriverWait(self.driver, 60).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='logIn'].m-btn.m-btn-login"))
             )
-            login_button.click()
+            try:
+                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", login_button)
+                login_button.click()
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].click();", login_button)
+                except Exception:
+                    pass
             logger.info(f"🚀 Clicked login button")
             # time.sleep(10)
             
@@ -791,7 +859,7 @@ class BetEngine(WebsiteOpener):
             
             # Verify login success by presence of header 'Account' button
             try:
-                WebDriverWait(self.driver, 15).until(
+                WebDriverWait(self.driver, 60).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m-list"))
                 )
                 logger.info(f"Login successful for account: {account.username}")
@@ -799,6 +867,18 @@ class BetEngine(WebsiteOpener):
                 # Get cookies from selenium
                 selenium_cookies = self.driver.get_cookies()
                 account.set_cookie_jar(selenium_cookies)
+                
+                try:
+                    profile_base = os.path.join(os.getcwd(), "profiles")
+                    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+                    os.makedirs(os.path.join(profile_base, safe_name), exist_ok=True)
+                    cookie_file = os.path.join(profile_base, safe_name, "cookies.json")
+                    to_save = {c["name"]: c["value"] for c in selenium_cookies if isinstance(c, dict) and "name" in c and "value" in c}
+                    with open(cookie_file, "w") as f:
+                        json.dump(to_save, f)
+                    logger.info(f"Persisted cookies for {account.username} to {cookie_file}")
+                except Exception:
+                    pass
                 
                 # Fetch account balance after successful login
                 balance = self.__fetch_account_balance(account)
@@ -1202,7 +1282,7 @@ class BetEngine(WebsiteOpener):
         except Exception as screenshot_error:
             logger.error(f"Failed to take screenshot: {screenshot_error}")
 
-    def __wait_for_market_content(self, timeout_seconds: int = 15) -> None:
+    def __wait_for_market_content(self, timeout_seconds: int = 60) -> None:
         """
         Explicitly wait for sportybet market content to render.
         Waits until at least one of the known market containers is present.
@@ -1218,13 +1298,107 @@ class BetEngine(WebsiteOpener):
         
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
             lambda d: d.execute_script(
-                "return !!(document.querySelector('.m-table__wrapper') || "
+                "return (function(){"+
+                "var containers = document.querySelectorAll('.m-eventDetail, .m-detail-wrapper, .m-table__wrapper');"+
+                "for (var i=0;i<containers.length;i++){"+
+                "  var titles = containers[i].querySelectorAll('.m-table-header-title');"+
+                "  for (var j=0;j<titles.length;j++){"+
+                "    var t = (titles[j].textContent||'').toLowerCase();"+
+                "    if (t.includes('over/under') || t.includes('over & under') || (t.includes('over') && t.includes('under')) || t.includes('total')) {"+
+                "      return true;"+
+                "    }"+
+                "  }"+
+                "}"+
+                "return false;"+
+                "})();"
             )
         )
         # .m-eventDetail
         # "document.querySelector('.m-table-cell--responsive'));"
         # "document.querySelector('.m-detail-wrapper') || "
         # "document.querySelector('.m-table__wrapper') || "
+
+    def __ensure_session_after_nav(self, account, recent_url):
+        try:
+            logged = False
+            try:
+                logged = bool(self.driver.execute_script("var el=document.querySelector('.m-user-center.m.list, .m-user-center.m-list'); if(!el) return false; var vis=(el.offsetParent!==null); var items=el.querySelectorAll(':scope > *'); return vis && items.length > 0;"))
+                logger.info(f"ensured")
+            except Exception:
+                logged = False
+            # if not logged:
+            #     try:
+            #         bal = self.__fetch_account_balance(account)
+            #         if bal and bal > 0:
+            #             logged = True
+            #     except Exception:
+            #         logged = False
+            if not logged:
+                try:
+                    logged = bool(self.__quick_inline_login(account))
+                except Exception:
+                    logged = False
+            return logged
+        except Exception:
+            return False
+
+    def __quick_inline_login(self, account):
+        try:
+            try:
+                self.driver.execute_script("document.querySelectorAll('.af-toast,.m-dialog,.m-modal,.m-balance-wrapper,.m-bablance-wrapper').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
+            except Exception:
+                pass
+            phone_input = WebDriverWait(self.driver, 30).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "input[name='phone']"))
+            )
+            try:
+                phone_input.clear()
+                phone_input.send_keys(account.username)
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].value=arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", phone_input, account.username)
+                except Exception:
+                    pass
+            password_input = WebDriverWait(self.driver, 30).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "input[name='psd']"))
+            )
+            try:
+                password_input.clear()
+                password_input.send_keys(account.password)
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].value=arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", password_input, account.password)
+                except Exception:
+                    pass
+            login_button = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='logIn'].m-btn.m-btn-login"))
+            )
+            try:
+                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", login_button)
+                login_button.click()
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].click();", login_button)
+                except Exception:
+                    pass
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m.list, .m-user-center.m-list"))
+            )
+            selenium_cookies = self.driver.get_cookies()
+            account.set_cookie_jar(selenium_cookies)
+            try:
+                profile_base = os.path.join(os.getcwd(), "profiles")
+                safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+                os.makedirs(os.path.join(profile_base, safe_name), exist_ok=True)
+                cookie_file = os.path.join(profile_base, safe_name, "cookies.json")
+                to_save = {c["name"]: c["value"] for c in selenium_cookies if isinstance(c, dict) and "name" in c and "value" in c}
+                with open(cookie_file, "w") as f:
+                    json.dump(to_save, f)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
 
     def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None, sport_id=1):
         start_bet_ts = time.time()
@@ -1258,32 +1432,52 @@ class BetEngine(WebsiteOpener):
             
             logger.info(f"Navigating to betting page: {bet_url}")
             self.open_url(bet_url)
+            try:
+                self.__ensure_session_after_nav(account, bet_url)
+            except Exception:
+                pass
             # Wait for the market content to render instead of using sleep
             try:
-                self.__wait_for_market_content(timeout_seconds=15)
+                self.__wait_for_market_content(timeout_seconds=60)
                 logger.info("found market content")
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window: {e}")
             # time.sleep(3)
             
-            # Check and handle betslip "Remove all" button
-            # try:
-            #     remove_all_button = self.driver.find_element(By.CSS_SELECTOR, ".betslip-header__remove-all")
-            #     if "betslip-header__remove-all--disabled" not in remove_all_button.get_attribute("class"):
-            #         logger.info("Remove all button is enabled, clicking it to clear betslip")
-            #         remove_all_button.click()
-            #         time.sleep(1)  # Wait for betslip to clear
-            #     else:
-            #         logger.info("Remove all button is disabled, betslip is already empty")
-            # except Exception as e:
-            #     logger.warning(f"Could not find or interact with Remove all button: {e}")
+            try:
+                remove_all = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "span.m-text-min[data-cms-key='remove_all'][data-cms-page='component_betslip']"))
+                )
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", remove_all)
+                except Exception:
+                    pass
+                try:
+                    remove_all.click()
+                    logger.info(f"remove all button clicked")
+                except Exception:
+                    try:
+                        self.driver.execute_script("arguments[0].click();", remove_all)
+                    except Exception:
+                        pass
+                try:
+                    ok_btn = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".m-dialog-footer.es-dialog-footer a.es-dialog-btn[data-ret='1']"))
+                    )
+                    ok_btn.click()
+                    logger.info(f"ok button clicked")
+                except Exception:
+                    pass
+            except Exception:
+                pass
             
             # Find and click the market/outcome
             market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team, sport_id)
             logger.info(f"Market element: {market_element}")
             if not market_element:
                 logger.error("Could not find market element")
-                # time.sleep(100)
+                self.driver.save_screenshot(f"market_not_found.png")
+                time.sleep(100)
                 return False
             
             try:
@@ -1345,7 +1539,12 @@ class BetEngine(WebsiteOpener):
                     for target in sel:
                         self.open_url(target["url"])
                         try:
-                            self.__wait_for_market_content(timeout_seconds=20)
+                            self.__ensure_session_after_nav(account, target["url"])
+                        except Exception:
+                            pass
+
+                        try:
+                            self.__wait_for_market_content(timeout_seconds=60)
                             WebDriverWait(self.driver, 10).until(
                                 lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
                             )
@@ -1417,18 +1616,28 @@ class BetEngine(WebsiteOpener):
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "div.m-btn-wrapper button.af-button.af-button--primary"))
                 )
                 
-                # Check the button text to determine action needed
                 button_text = place_bet_button.text.strip()
                 logger.info(f"Found bet button with text: {button_text}")
-                
                 try:
                     self.driver.execute_script("document.querySelectorAll('.m-bablance-wrapper,.m-balance-wrapper,.af-toast').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
                     self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", place_bet_button)
                     WebDriverWait(self.driver, 10).until(
                         lambda d: d.execute_script("const el=arguments[0]; const r=el.getBoundingClientRect(); const x=r.left+r.width/2; const y=r.top+r.height/2; const topEl=document.elementFromPoint(x,y); return topEl===el || el && el.contains(topEl);", place_bet_button)
                     )
-                    place_bet_button.click()
-                    logger.info("Clicked bet button")
+                    if "accept changes" in (button_text or "").lower():
+                        place_bet_button.click()
+                        time.sleep(0.5)
+                        try:
+                            place_bet_button = WebDriverWait(self.driver, 10).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, "div.m-btn-wrapper button.af-button.af-button--primary"))
+                            )
+                        except Exception:
+                            pass
+                        place_bet_button.click()
+                        logger.info("Accepted changes and clicked bet button")
+                    else:
+                        place_bet_button.click()
+                        logger.info("Clicked bet button")
                 except Exception as click_error:
                     logger.error(f"Place bet click intercepted, trying fallbacks: {click_error}")
                     try:

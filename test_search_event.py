@@ -18,7 +18,7 @@ def run_search_tests():
         config = {}
     be = BetEngine(config, skip_initial_login=True)
     scenarios = [
-        ("Atenas", "Obras"),
+        ("Puchov", "Tatran Presov"),
         # ("Orlando Magic", "Atlanta Hawks"),
     ]
     results = []

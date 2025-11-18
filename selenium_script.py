@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import time
 import os
 import tempfile
@@ -58,33 +57,39 @@ class WebsiteOpener:
         options.add_argument("--headless=new")
         
         # Additional options for better compatibility
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920,1080')
+        options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins")
-        options.add_argument("--disable-images")
-        options.add_argument("--disable-javascript")  # Only if not needed
-        options.add_argument("--memory-pressure-off")
-        options.add_argument("--max_old_space_size=4096")
+        # options.add_argument('--disable-dev-shm-usage')
+        # options.add_argument('--disable-gpu')
+        # options.add_argument('--window-size=1920,1080')
+        # options.add_argument("--no-sandbox")
+        # options.add_argument("--disable-dev-shm-usage")
+        # options.add_argument("--disable-gpu")
+        # options.add_argument("--disable-extensions")
+        # options.add_argument("--disable-plugins")
+        # options.add_argument("--disable-images")
+        
+        # options.add_argument("--no-first-run")
+        # options.add_argument("--no-default-browser-check")
+        # options.add_argument("--disable-infobars")
+        # options.add_argument("--disable-notifications")
+        # options.add_argument("--memory-pressure-off")
+        # options.add_argument("--max_old_space_size=4096")
 
-        if self.profile_path:
-            try:
-                os.makedirs(self.profile_path, exist_ok=True)
-            except Exception:
-                pass
-            options.add_argument(f"--user-data-dir={self.profile_path}")
-            options.add_argument("--profile-directory=Default")
+        # if self.profile_path:
+        #     try:
+        #         os.makedirs(self.profile_path, exist_ok=True)
+        #     except Exception:
+        #         pass
+        #     options.add_argument(f"--user-data-dir={self.profile_path}")
+        #     # options.add_argument("--profile-directory=Default")
         
         # Add user agent
         options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
         
         # Set page load strategy
-        options.page_load_strategy = 'eager'
+        # options.page_load_strategy = 'eager'
         
         # Set up Selenium Wire options for proxy authentication
         seleniumwire_options = {}
@@ -111,39 +116,39 @@ class WebsiteOpener:
         # Initialize the Chrome driver with Selenium Wire
         try:
             self.driver = webdriver.Chrome(
-                service = Service("/usr/local/bin/chromedriver"),
+                # service = Service("/usr/local/bin/chromedriver"),
                 # service=Service(ChromeDriverManager().install()),
                 seleniumwire_options=seleniumwire_options,
                 options=options
             )
             print(f"Driver successful: {self.driver}")
-            try:
-                if hasattr(self.driver, 'request_interceptor'):
-                    def _req_interceptor(request):
-                        try:
-                            ce = request.headers.get('Content-Encoding')
-                            if ce and 'gzip' in str(ce).lower():
-                                try:
-                                    del request.headers['Content-Encoding']
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                    self.driver.request_interceptor = _req_interceptor
-                if hasattr(self.driver, 'response_interceptor'):
-                    def _resp_interceptor(response):
-                        try:
-                            ce = response.headers.get('Content-Encoding')
-                            if ce and 'gzip' in str(ce).lower():
-                                try:
-                                    del response.headers['Content-Encoding']
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                    self.driver.response_interceptor = _resp_interceptor
-            except Exception as _ie:
-                print(f"Interceptor setup error: {_ie}")
+            # try:
+            #     if hasattr(self.driver, 'request_interceptor'):
+            #         def _req_interceptor(request):
+            #             try:
+            #                 ae = request.headers.get('Accept-Encoding')
+            #                 if ae:
+            #                     try:
+            #                         del request.headers['Accept-Encoding']
+            #                     except Exception:
+            #                         pass
+            #             except Exception:
+            #                 pass
+            #         self.driver.request_interceptor = _req_interceptor
+            #     if hasattr(self.driver, 'response_interceptor'):
+            #         def _resp_interceptor(request, response):
+            #             try:
+            #                 ce = response.headers.get('Content-Encoding')
+            #                 if ce and 'gzip' in str(ce).lower():
+            #                     try:
+            #                         del response.headers['Content-Encoding']
+            #                     except Exception:
+            #                         pass
+            #             except Exception:
+            #                 pass
+            #         self.driver.response_interceptor = _resp_interceptor
+            # except Exception as _ie:
+            #     print(f"Interceptor setup error: {_ie}")
         except Exception as e:
             print(f"Error setting up ChromeDriver: {e}")
             raise
