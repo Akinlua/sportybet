@@ -281,7 +281,10 @@ class BetEngine(WebsiteOpener):
                 else:
                     logger.info("Proxy usage disabled in config")
             
-            super().__init__(self.__headless, proxy)
+            profile_base = os.path.join(os.getcwd(), "profiles")
+            safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+            profile_path = os.path.join(profile_base, safe_name)
+            super().__init__(self.__headless, proxy, profile_path=profile_path)
             self.__browser_initialized = True
             self.__browser_open = True
             self._current_proxy = proxy  # Store current proxy for future comparison
@@ -846,9 +849,52 @@ class BetEngine(WebsiteOpener):
     def __normalize_team(self, name):
         s = str(name or "").lower()
         s = re.sub(r"\(.*?\)", "", s)
-        s = re.sub(r"[^a-z0-9\s]", "", s)
+        s = re.sub(r"[^a-z0-9\s]", " ", s)
         s = re.sub(r"\s+", " ", s).strip()
-        return s
+        s = re.sub(r"\b(fc|bc|cf|ac)\b\s*$", "", s).strip()
+        tokens = [t for t in s.split() if t not in {"club","team","sport","sports","fc","cf","sc","ac","bc","fk","united","city","town","rovers","athletic","sporting","real","atletico","inter","milan","juventus","football","soccer","basketball"}]
+        return " ".join(tokens)
+
+    def __extract_longest_tokens(self, name):
+        s = self.__normalize_team(name)
+        arr = [w for w in s.split() if len(w) >= 3]
+        arr.sort(key=lambda x: len(x), reverse=True)
+        seen = []
+        for w in arr:
+            if w not in seen:
+                seen.append(w)
+            if len(seen) >= 3:
+                break
+        return seen
+
+    def __lev_similarity(self, a, b):
+        a = self.__normalize_team(a)
+        b = self.__normalize_team(b)
+        if not a or not b:
+            return 0.0
+        la, lb = len(a), len(b)
+        dp = list(range(lb + 1))
+        for i in range(1, la + 1):
+            prev = dp[0]
+            dp[0] = i
+            ai = a[i - 1]
+            for j in range(1, lb + 1):
+                tmp = dp[j]
+                cost = 0 if ai == b[j - 1] else 1
+                dp[j] = min(dp[j] + 1, dp[j - 1] + 1, prev + cost)
+                prev = tmp
+        dist = dp[lb]
+        sim = (1 - dist / max(la, lb)) * 100
+        return sim
+
+    def __word_match(self, token, text):
+        token = str(token or "").lower().strip()
+        text = self.__normalize_team(text)
+        if not token or not text:
+            return False
+        if len(token) <= 3:
+            return re.search(r"\b" + re.escape(token) + r"\b", text) is not None
+        return token in text
 
     def __similar(self, a, b):
         ta = set(self.__normalize_team(a).split())
@@ -876,23 +922,31 @@ class BetEngine(WebsiteOpener):
             pinnacle_datetime = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(pinnacle_start_time)/1000))
             logger.info(f"Pinnacle start time: {pinnacle_datetime} (GMT)")
         
-        q_home = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", home_team)).strip().lower()
-        q_away = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", away_team)).strip().lower()
-        search_strategies = [
-            f"{q_home} {q_away}",
-            q_home,
-            q_away,
-        ]
-        
-        # Add individual words from team names as search strategies
-        for team in [home_team, away_team]:
-            words = team.split()
-            for word in words:
-                if len(word) > 3 and word not in search_strategies:  # Only use words longer than 3 chars
-                    search_strategies.append(word)
+        q_home = self.__normalize_team(home_team)
+        q_away = self.__normalize_team(away_team)
+        l_home = self.__extract_longest_tokens(home_team)
+        l_away = self.__extract_longest_tokens(away_team)
+        search_strategies = []
+        for i in range(min(3, len(l_home))):
+            for j in range(min(3, len(l_away))):
+                search_strategies.append(f"{l_home[i]} {l_away[j]}")
+        for t in l_home[:3] + l_away[:3]:
+            if t not in search_strategies:
+                search_strategies.append(t)
         
         # Store potential matches with scores for later evaluation
         potential_matches = []
+
+        try:
+            from urllib3.util.retry import Retry
+            from requests.adapters import HTTPAdapter
+            session = requests.Session()
+            retry = Retry(total=3, connect=3, read=3, backoff_factor=0.5, status_forcelist=[502, 503, 504], allowed_methods=["GET"]) 
+            adapter = HTTPAdapter(max_retries=retry)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+        except Exception:
+            session = requests
         
         # List of terms that indicate the wrong team variant
         # variant_indicators = ["ladies", "women", "u21", "u-21", "u23", "u-23", "youth", "junior", "b team"]
@@ -916,6 +970,7 @@ class BetEngine(WebsiteOpener):
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                     "Accept": "application/json",
                     "Referer": self.__bet_host,
+                    "Connection": "close",
                 }
                 
                 # Get proxy if available
@@ -929,7 +984,18 @@ class BetEngine(WebsiteOpener):
                             break
                 
                 # logger.info(f"Searching with URL: {search_url} and params: {params}")
-                response = requests.get(search_url, params=params, headers=headers, timeout=12)
+                prox = proxies
+                if isinstance(prox, dict) and "https" not in prox and "http" in prox:
+                    prox = dict(prox)
+                    prox["https"] = prox.get("http")
+                try:
+                    response = session.get(search_url, params=params, headers=headers, proxies=prox, timeout=15)
+                except requests.exceptions.SSLError:
+                    try:
+                        response = session.get(search_url, params=params, headers=headers, proxies=None, timeout=15)
+                    except Exception as e:
+                        logger.error(f"Search request error: {e}")
+                        continue
                 
                 # logger.info(f"Response status: {response.status_code}")
                 # print(f"Response content: {response.text[:500]}...")
@@ -961,29 +1027,47 @@ class BetEngine(WebsiteOpener):
                             if not event_id:
                                 continue
                                 
-                            hn = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", str(home_team_name))).strip().lower()
-                            an = re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", str(away_team_name))).strip().lower()
-                            cases = [
-                                (hn == q_home and self.__similar(a=an, b=q_away) >= 0.5),
-                                (hn == q_away and self.__similar(a=an, b=q_home) >= 0.5),
-                                (an == q_home and self.__similar(a=hn, b=q_away) >= 0.5),
-                                (an == q_away and self.__similar(a=hn, b=q_home) >= 0.5),
-                            ]
-                            if any(cases):
-                                match_score = 100
-                                est = event.get("estimateStartTime") or event.get("startTime")
-                                if pinnacle_start_time and est:
-                                    try:
-                                        diff_h = abs(int(pinnacle_start_time) - int(est)) / (1000 * 60 * 60)
-                                        if diff_h > 2:
-                                            continue
-                                        match_score += 10
-                                    except Exception:
-                                        pass
+                            hn = self.__normalize_team(home_team_name)
+                            an = self.__normalize_team(away_team_name)
+                            est = event.get("estimateStartTime") or event.get("startTime")
+                            if pinnacle_start_time and est:
+                                try:
+                                    diff_h = abs(int(pinnacle_start_time) - int(est)) / (1000 * 60 * 60)
+                                    if diff_h > 2:
+                                        continue
+                                except Exception:
+                                    continue
+                            lh = self.__extract_longest_tokens(home_team)
+                            la = self.__extract_longest_tokens(away_team)
+                            ok_l1b = False
+                            for x in lh[:1] + la[:1]:
+                                if self.__word_match(x, hn) or self.__word_match(x, an):
+                                    ok_l1b = True
+                                    break
+                            sim_hh = self.__lev_similarity(q_home, hn)
+                            sim_aa = self.__lev_similarity(q_away, an)
+                            sim_ha = self.__lev_similarity(q_home, an)
+                            sim_ah = self.__lev_similarity(q_away, hn)
+                            best_pair = max(((sim_hh, sim_aa),(sim_ha, sim_ah)), key=lambda t: t[0]+t[1])
+                            s1, s2 = best_pair
+                            rule_scores = []
+                            if s1 >= 25 and s2 >= 25 and (s1 + s2) >= 100:
+                                rule_scores.append(400)
+                            if ok_l1b and s1 >= 70 or ok_l1b and s2 >= 70:
+                                rule_scores.append(350)
+                            if q_home == hn and s2 >= 50 or q_home == an and s2 >= 50 or q_away == hn and s1 >= 50 or q_away == an and s1 >= 50:
+                                rule_scores.append(300)
+                            bs1 = (len(q_home) >= 3 and (q_home in hn or hn in q_home)) or (len(q_home) <= 3 and self.__word_match(q_home, hn))
+                            bs2 = (len(q_away) >= 3 and (q_away in an or an in q_away)) or (len(q_away) <= 3 and self.__word_match(q_away, an))
+                            if ok_l1b and (s1 >= 50 or s2 >= 50 or (bs1 and bs2)):
+                                rule_scores.append(250)
+                            if s1 >= 40 and s2 >= 40 and (s1 + s2) >= 100:
+                                rule_scores.append(200)
+                            if rule_scores:
                                 potential_matches.append({
                                     "event_name": f"{home_team_name} vs {away_team_name}",
                                     "event_id": event_id,
-                                    "score": match_score,
+                                    "score": max(rule_scores),
                                 })
                             # logger.info(f"Potential match: {event_name} (Score: {match_score})")
                     else:
@@ -1133,8 +1217,14 @@ class BetEngine(WebsiteOpener):
             pass
         
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
-            lambda d: d.execute_script("return !!(document.querySelector('.m-eventDetail') || document.querySelector('.m-detail-wrapper') || document.querySelector('.m-table__wrapper'));")
+            lambda d: d.execute_script(
+                "return !!(document.querySelector('.m-table__wrapper') || "
+            )
         )
+        # .m-eventDetail
+        # "document.querySelector('.m-table-cell--responsive'));"
+        # "document.querySelector('.m-detail-wrapper') || "
+        # "document.querySelector('.m-table__wrapper') || "
 
     def __place_bet_with_selenium(self, account, bet_url, market_type, outcome, odds, stake, points=None, is_first_half=False, home_team=None, away_team=None, sport_id=1):
         start_bet_ts = time.time()
@@ -1174,7 +1264,7 @@ class BetEngine(WebsiteOpener):
                 logger.info("found market content")
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window: {e}")
-            time.sleep(3)
+            # time.sleep(3)
             
             # Check and handle betslip "Remove all" button
             # try:
@@ -1331,9 +1421,33 @@ class BetEngine(WebsiteOpener):
                 button_text = place_bet_button.text.strip()
                 logger.info(f"Found bet button with text: {button_text}")
                 
-                # Click the button
-                place_bet_button.click()
-                logger.info("Clicked bet button")
+                try:
+                    self.driver.execute_script("document.querySelectorAll('.m-bablance-wrapper,.m-balance-wrapper,.af-toast').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
+                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", place_bet_button)
+                    WebDriverWait(self.driver, 10).until(
+                        lambda d: d.execute_script("const el=arguments[0]; const r=el.getBoundingClientRect(); const x=r.left+r.width/2; const y=r.top+r.height/2; const topEl=document.elementFromPoint(x,y); return topEl===el || el && el.contains(topEl);", place_bet_button)
+                    )
+                    place_bet_button.click()
+                    logger.info("Clicked bet button")
+                except Exception as click_error:
+                    logger.error(f"Place bet click intercepted, trying fallbacks: {click_error}")
+                    try:
+                        self.driver.execute_script("arguments[0].click();", place_bet_button)
+                        logger.info("Clicked bet button via JavaScript")
+                    except Exception as js_error:
+                        logger.error(f"JavaScript click failed: {js_error}")
+                        try:
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(place_bet_button).click().perform()
+                            logger.info("Clicked bet button via ActionChains")
+                        except Exception as action_error:
+                            logger.error(f"All place bet click methods failed: {action_error}")
+                            try:
+                                ts = time.strftime("%Y%m%d-%H%M%S")
+                                self.driver.save_screenshot(f"place_bet_click_error_{ts}.png")
+                            except Exception:
+                                pass
+                            return False
                 try:
                     confirm_span = WebDriverWait(self.driver, 15).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "button.af-button.af-button--primary span span[data-cms-key='confirm']"))

@@ -14,7 +14,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 class WebsiteOpener:
     """A class to handle opening websites with Selenium Wire for proxy authentication."""
 
-    def __init__(self, headless=False, proxy=None, config_file="config.json"):
+    def __init__(self, headless=False, proxy=None, config_file="config.json", profile_path=None):
         """
         Initialize the WebsiteOpener.
         
@@ -25,6 +25,7 @@ class WebsiteOpener:
         """
         self.proxy = proxy
         self.config_file = config_file
+        self.profile_path = profile_path
         self.setup_driver(headless)
     
     def get_proxy_from_config(self):
@@ -70,6 +71,14 @@ class WebsiteOpener:
         options.add_argument("--disable-javascript")  # Only if not needed
         options.add_argument("--memory-pressure-off")
         options.add_argument("--max_old_space_size=4096")
+
+        if self.profile_path:
+            try:
+                os.makedirs(self.profile_path, exist_ok=True)
+            except Exception:
+                pass
+            options.add_argument(f"--user-data-dir={self.profile_path}")
+            options.add_argument("--profile-directory=Default")
         
         # Add user agent
         options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
@@ -108,6 +117,33 @@ class WebsiteOpener:
                 options=options
             )
             print(f"Driver successful: {self.driver}")
+            try:
+                if hasattr(self.driver, 'request_interceptor'):
+                    def _req_interceptor(request):
+                        try:
+                            ce = request.headers.get('Content-Encoding')
+                            if ce and 'gzip' in str(ce).lower():
+                                try:
+                                    del request.headers['Content-Encoding']
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                    self.driver.request_interceptor = _req_interceptor
+                if hasattr(self.driver, 'response_interceptor'):
+                    def _resp_interceptor(response):
+                        try:
+                            ce = response.headers.get('Content-Encoding')
+                            if ce and 'gzip' in str(ce).lower():
+                                try:
+                                    del response.headers['Content-Encoding']
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                    self.driver.response_interceptor = _resp_interceptor
+            except Exception as _ie:
+                print(f"Interceptor setup error: {_ie}")
         except Exception as e:
             print(f"Error setting up ChromeDriver: {e}")
             raise
@@ -173,4 +209,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -1,0 +1,435 @@
+# Team Matching Rules Documentation
+
+This document describes all the team comparison rules used in the match search system, in order of priority.
+
+---
+
+## Prerequisites
+
+### Time Matching Requirement
+**ALL rules require exact time matching** (after timezone adjustment).
+
+- Search time is adjusted by adding 1 hour (timezone correction)
+- Match time must exactly match the adjusted search time
+- If times don't match, the match is skipped regardless of team name similarity
+
+**Example:**
+- Search: `2025-11-06 21:00:00` → Adjusted: `2025-11-06 22:00:00`
+- Database: `2025-11-06 22:00:00` ✅ Match
+- Database: `2025-11-06 16:00:00` ❌ No match (different time)
+
+---
+
+## Rule Priority Order
+
+Rules are executed in the following order. If a rule finds matches, subsequent rules are **not** executed.
+
+---
+
+## Rule 1: Longest String Matching (Multi-Level Fallback)
+
+**Priority:** Highest  
+**Execution:** Tries 3 levels (1st longest string, 2nd longest string, 3rd longest string)  
+**Stops:** When matches are found at any level
+
+### How Longest Strings Are Extracted
+
+1. **Normalization:** Team names are normalized (lowercase, remove special chars, remove FC/BC/CF suffixes)
+2. **Generic Word Removal:** Removes common words like: `club`, `team`, `sport`, `real`, `united`, `city`, `athletic`, etc.
+3. **Word Extraction:** Splits by spaces, filters words with length ≥3, excludes generic words
+4. **Sorting:** Sorts words by length (longest first)
+5. **Selection:** Returns up to 3 longest words
+
+**Example:**
+- Input: `"Real Betis SRL"`
+- After normalization: `"real betis srl"`
+- After generic removal: `"betis"` (removed "real" and "srl")
+- Longest strings: `["betis"]`
+
+**Example:**
+- Input: `"Olympique Lyonnais"`
+- After normalization: `"olympique lyonnais"`
+- After generic removal: `"lyonnais"` (removed "olympique")
+- Longest strings: `["lyonnais"]`
+
+**Example:**
+- Input: `"Teutonia Hamburg"`
+- After normalization: `"teutonia hamburg"`
+- After generic removal: `"teutonia"` and `"hamburg"` (both kept)
+- Longest strings: `["teutonia", "hamburg"]` (sorted by length)
+
+### Word Boundary Matching for Short Strings
+
+**Important:** Strings with length ≤3 characters require **word boundary matching** to prevent false positives.
+
+- **Short strings (≤3 chars):** Must match as whole words (word boundaries)
+- **Long strings (>3 chars):** Use substring matching (contains)
+
+**Why?** Prevents abbreviations like "TSV" from matching inside words like "Etsv".
+
+**Example (False Positive Prevention):**
+- Query: `"Teutonia Hamburg"` vs `"Niendorfer TSV"`
+- Longest strings: Level 1: `["teutonia", "niendorfer"]`, Level 2: `["hamburg", "tsv"]`
+- Database: `"Etsv Hamburg"` vs `"HEBC Hamburg"`
+- Level 2 matching:
+  - `"hamburg"` found in `"Etsv Hamburg"` ✅ (substring, >3 chars)
+  - `"tsv"` found in `"Etsv Hamburg"` ❌ (would match without word boundary, but now requires whole word)
+  - **Result:** ❌ **Fails** (prevents false positive)
+
+**Example (Correct Match):**
+- Query: `"Team TSV"` vs `"Hamburg"`
+- Longest strings: `["team", "tsv"]` and `["hamburg"]`
+- Database: `"TSV Hamburg"` vs `"Hamburg"`
+- `"tsv"` matches `"TSV Hamburg"` ✅ (whole word match)
+- `"hamburg"` matches `"Hamburg"` ✅
+- **Result:** ✅ **Passes**
+
+### Rule 1a: Combined Similarity Match
+**Condition:** 
+- Team 1 similarity ≥ 25% AND
+- Team 2 similarity ≥ 25% AND
+- Combined similarity (Team 1 + Team 2) ≥ 100%
+
+**Similarity Calculation:**
+- Uses Levenshtein distance (edit distance)
+- Formula: `(1 - distance / max_length) * 100`
+- Normalized team names are compared
+
+**Example:**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Database: `"Betis"` vs `"Lyon"`
+- Team 1 similarity: 50% (`"real betis"` vs `"betis"`)
+- Team 2 similarity: 22.22% (`"olympique lyonnais"` vs `"lyon"`)
+- Combined: 72.22% ❌ **Fails** (Team 2 < 25%, Combined < 100%)
+
+**Example:**
+- Query: `"Manchester United"` vs `"Liverpool FC"`
+- Database: `"Man United"` vs `"Liverpool"`
+- Team 1 similarity: 60% 
+- Team 2 similarity: 85%
+- Combined: 145% ✅ **Passes** (Both ≥25%, Combined ≥100%)
+
+### Rule 1b: Both Longest Strings Match (Substring)
+**Condition:**
+- Longest string from Team 1 is found in either database team (substring match) AND
+- Longest string from Team 2 is found in either database team (substring match)
+
+**Note:** 
+- The strings can match in any order (Team 1's string can match Database Team 2, etc.)
+- Short strings (≤3 chars) require word boundary matching
+
+**Example:**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Longest strings: `["betis"]` and `["lyonnais"]`
+- Database: `"Betis SRL"` vs `"Lyon SRL"`
+- `"betis"` found in `"Betis SRL"` ✅
+- `"lyonnais"` found in `"Lyon SRL"` ❌ (only "Lyon" exists, not "Lyonnais")
+- **Result:** ❌ **Fails**
+
+**Example:**
+- Query: `"Barcelona FC"` vs `"Real Madrid"`
+- Longest strings: `["barcelona"]` and `["madrid"]`
+- Database: `"Barcelona"` vs `"Real Madrid CF"`
+- `"barcelona"` found in `"Barcelona"` ✅
+- `"madrid"` found in `"Real Madrid CF"` ✅
+- **Result:** ✅ **Passes**
+
+**Example (Word Boundary):**
+- Query: `"Team TSV"` vs `"Hamburg"`
+- Longest strings: `["team", "tsv"]` and `["hamburg"]`
+- Database: `"TSV Hamburg"` vs `"Hamburg"`
+- Level 2: `"tsv"` matches `"TSV Hamburg"` ✅ (whole word)
+- `"hamburg"` matches `"Hamburg"` ✅
+- **Result:** ✅ **Passes**
+
+### Rule 1c: Partial Longest String Match with High Similarity
+**Condition (either):**
+- Longest string from Team 1 matches AND Team 2 similarity ≥ 70% OR
+- Longest string from Team 2 matches AND Team 1 similarity ≥ 70%
+
+**Example:**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Longest strings: `["betis"]` and `["lyonnais"]`
+- Database: `"Betis"` vs `"Lyon"`
+- `"betis"` found in `"Betis"` ✅
+- Team 2 similarity: 22.22% (`"olympique lyonnais"` vs `"lyon"`) ❌ (< 70%)
+- **Result:** ❌ **Fails**
+
+**Example:**
+- Query: `"Manchester United"` vs `"Liverpool"`
+- Longest strings: `["manchester"]` and `["liverpool"]`
+- Database: `"Man United"` vs `"Liverpool FC"`
+- `"manchester"` found in `"Man United"` ✅
+- Team 2 similarity: 90% (`"liverpool"` vs `"liverpool fc"`) ✅ (≥ 70%)
+- **Result:** ✅ **Passes**
+
+### Rule 1 Execution Flow
+
+1. Extract longest strings from both query teams (up to 3 per team)
+2. **Level 1:** Try matching with 1st longest strings
+3. **Level 2:** If no matches, try with 2nd longest strings
+4. **Level 3:** If no matches, try with 3rd longest strings
+5. **Stop:** As soon as matches are found at any level
+
+---
+
+## Rule 2: Hybrid Rule (One Exact Match + One Similarity Match)
+
+**Priority:** Second (only executed if Rule 1 finds no matches)  
+**Condition:** One team matches exactly (normalized) AND the other team has ≥50% similarity
+
+### How It Works
+
+1. Calculates all possible similarity combinations:
+   - Query Team 1 vs Database Team 1
+   - Query Team 1 vs Database Team 2
+   - Query Team 2 vs Database Team 1
+   - Query Team 2 vs Database Team 2
+
+2. Checks for exact matches (normalized team names are identical)
+
+3. Applies hybrid rule if any of these conditions are met:
+   - **Case 1:** Query Team 1 = Database Team 1 (exact) AND Query Team 2 similarity with Database Team 2 ≥ 50%
+   - **Case 2:** Query Team 1 = Database Team 2 (exact) AND Query Team 2 similarity with Database Team 1 ≥ 50%
+   - **Case 3:** Query Team 2 = Database Team 1 (exact) AND Query Team 1 similarity with Database Team 2 ≥ 50%
+   - **Case 4:** Query Team 2 = Database Team 2 (exact) AND Query Team 1 similarity with Database Team 1 ≥ 50%
+
+### Examples
+
+**Example 1:**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Database: `"Betis"` vs `"Lyon"`
+- Normalized Query: `"real betis"` vs `"olympique lyonnais"`
+- Normalized Database: `"betis"` vs `"lyon"`
+- Exact matches: None ❌
+- **Result:** ❌ **Fails** (no exact match)
+
+**Example 2:**
+- Query: `"Catanzaro U16"` vs `"Fiorentina"`
+- Database: `"Genoa"` vs `"Fiorentina"`
+- Normalized Query: `"catanzaro u16"` vs `"fiorentina"`
+- Normalized Database: `"genoa"` vs `"fiorentina"`
+- Exact match: Query Team 2 = Database Team 2 (`"fiorentina"` = `"fiorentina"`) ✅
+- Query Team 1 similarity with Database Team 1: `"catanzaro u16"` vs `"genoa"` = 15% ❌ (< 50%)
+- **Result:** ❌ **Fails** (similarity too low)
+
+**Example 3:**
+- Query: `"Betis"` vs `"Olympique Lyonnais"`
+- Database: `"Betis"` vs `"Lyon"`
+- Normalized Query: `"betis"` vs `"olympique lyonnais"`
+- Normalized Database: `"betis"` vs `"lyon"`
+- Exact match: Query Team 1 = Database Team 1 (`"betis"` = `"betis"`) ✅
+- Query Team 2 similarity with Database Team 2: `"olympique lyonnais"` vs `"lyon"` = 22.22% ❌ (< 50%)
+- **Result:** ❌ **Fails** (similarity too low)
+
+**Example 4:**
+- Query: `"Fiorentina"` vs `"AC Milan"`
+- Database: `"Fiorentina"` vs `"Milan"`
+- Normalized Query: `"fiorentina"` vs `"ac milan"` → `"fiorentina"` vs `"milan"`
+- Normalized Database: `"fiorentina"` vs `"milan"`
+- Exact match: Query Team 1 = Database Team 1 (`"fiorentina"` = `"fiorentina"`) ✅
+- Query Team 2 similarity with Database Team 2: `"milan"` vs `"milan"` = 100% ✅ (≥ 50%)
+- **Result:** ✅ **Passes** (Case 1: Exact1 + Similarity2)
+
+**Example 5:**
+- Query: `"Real Betis"` vs `"Lyon"`
+- Database: `"Betis"` vs `"Lyon"`
+- Normalized Query: `"real betis"` vs `"lyon"`
+- Normalized Database: `"betis"` vs `"lyon"`
+- Exact match: Query Team 2 = Database Team 2 (`"lyon"` = `"lyon"`) ✅
+- Query Team 1 similarity with Database Team 1: `"real betis"` vs `"betis"` = 50% ✅ (≥ 50%)
+- **Result:** ✅ **Passes** (Case 4: Exact2 + Similarity1)
+
+---
+
+## Rule 3: Fallback Rule (Longest String + Similarity/Substring)
+
+**Priority:** Third (only executed if Rules 1 and 2 find no matches)  
+**Condition:** One longest string matches AND (other team similarity ≥50% OR bidirectional substring match)
+
+### How It Works
+
+1. Uses the first longest strings from both query teams
+2. Checks if longest strings match (with word boundary for short strings)
+3. Calculates similarity percentages
+4. Checks bidirectional substring matches (abbreviation handling)
+
+5. Applies fallback rule if any of these conditions are met:
+   - **Case 1:** Longest string 1 matches AND Team 2 similarity ≥ 50%
+   - **Case 2:** Longest string 2 matches AND Team 1 similarity ≥ 50%
+   - **Case 3:** Longest string 1 matches AND Team 2 bidirectional substring match (abbreviation)
+   - **Case 4:** Longest string 2 matches AND Team 1 bidirectional substring match (abbreviation)
+   - **Case 5:** Both teams have bidirectional substring matches (abbreviation handling)
+
+### Bidirectional Substring Matching
+
+Checks if one team name contains the other (in either direction):
+- Query Team 1 contains Database Team 1 OR Database Team 1 contains Query Team 1
+- Query Team 2 contains Database Team 2 OR Database Team 2 contains Query Team 2
+- Minimum length: 3 characters (to avoid false positives)
+
+### Examples
+
+**Example 1 (Case 1):**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Longest strings: `["betis"]` and `["lyonnais"]`
+- Database: `"Betis"` vs `"Lyon"`
+- `"betis"` matches `"Betis"` ✅
+- Team 2 similarity: 22.22% ❌ (< 50%)
+- Bidirectional substring: `"olympique lyonnais"` contains `"lyon"` ✅
+- **Result:** ✅ **Passes** (Case 3: LongestString1 + Substring2)
+
+**Example 2 (Case 2):**
+- Query: `"Manchester United"` vs `"Liverpool"`
+- Longest strings: `["manchester"]` and `["liverpool"]`
+- Database: `"Man United"` vs `"Liverpool FC"`
+- `"liverpool"` matches `"Liverpool FC"` ✅
+- Team 1 similarity: 65% ✅ (≥ 50%)
+- **Result:** ✅ **Passes** (Case 2: LongestString2 + Similarity1)
+
+**Example 3 (Case 5):**
+- Query: `"Betis"` vs `"Lyon"`
+- Database: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Normalized Query: `"betis"` vs `"lyon"`
+- Normalized Database: `"real betis"` vs `"olympique lyonnais"`
+- `"real betis"` contains `"betis"` ✅
+- `"olympique lyonnais"` contains `"lyon"` ✅
+- **Result:** ✅ **Passes** (Case 5: BidirectionalSubstring)
+
+**Example 4 (Fails):**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- Longest strings: `["betis"]` and `["lyonnais"]`
+- Database: `"Barcelona"` vs `"Real Madrid"`
+- `"betis"` not found ❌
+- `"lyonnais"` not found ❌
+- **Result:** ❌ **Fails** (no longest string matches)
+
+---
+
+## Rule 4: External API Search
+
+**Priority:** Fourth (only executed if Rules 1, 2, and 3 find no matches)  
+**Source:** External Sportybet Search API  
+**Execution:** Searches API using longest strings (Level 1, 2, 3 fallback)
+
+### API Search Matching Criteria
+
+**Condition:**
+- Team 1 similarity ≥ 40% AND
+- Team 2 similarity ≥ 40% AND
+- Combined similarity ≥ 100%
+
+**Note:** API search checks both possible team orderings (normal and swapped) and uses the better match.
+
+**Example:**
+- Query: `"Manchester United"` vs `"Liverpool"`
+- API Result: `"Man United"` vs `"Liverpool FC"`
+- Team 1 similarity: 65% ✅ (≥ 40%)
+- Team 2 similarity: 85% ✅ (≥ 40%)
+- Combined: 150% ✅ (≥ 100%)
+- **Result:** ✅ **Passes**
+
+**Example:**
+- Query: `"Real Betis"` vs `"Olympique Lyonnais"`
+- API Result: `"Betis"` vs `"Lyon"`
+- Team 1 similarity: 50% ✅ (≥ 40%)
+- Team 2 similarity: 22.22% ❌ (< 40%)
+- Combined: 72.22% ❌ (< 100%)
+- **Result:** ❌ **Fails**
+
+---
+
+## Summary Table
+
+| Rule | Priority | Time Required | Team Matching Criteria | Stops When? |
+|------|----------|---------------|----------------------|-------------|
+| **Rule 1a** | 1 | Exact | Both ≥25% AND Combined ≥100% | Match found |
+| **Rule 1b** | 1 | Exact | Both longest strings match (substring/word boundary) | Match found |
+| **Rule 1c** | 1 | Exact | One longest string match AND other ≥70% | Match found |
+| **Rule 2** | 2 | Exact | One exact match AND other ≥50% | Match found |
+| **Rule 3** | 3 | Exact | One longest string match AND (other ≥50% OR substring) | Match found |
+| **Rule 4** | 4 | Exact | Both ≥40% AND Combined ≥100% | Match found |
+
+---
+
+## Team Name Normalization
+
+All team names are normalized before comparison:
+
+1. Convert to lowercase
+2. Remove special characters (keep only letters, numbers, spaces)
+3. Normalize whitespace (multiple spaces → single space)
+4. Remove trailing suffixes: `FC`, `BC`, `CF`, `AC`
+
+**Examples:**
+- `"Real Betis FC"` → `"real betis"`
+- `"Olympique Lyonnais"` → `"olympique lyonnais"`
+- `"AC Milan"` → `"ac milan"` (AC is kept, only FC/BC/CF/AC at end are removed)
+- `"Manchester United"` → `"manchester united"`
+
+---
+
+## Generic Words Removed During Longest String Extraction
+
+These words are automatically removed and not used for matching:
+- `club`, `team`, `sport`, `sports`
+- `fc`, `cf`, `sc`, `ac`, `bc`, `fk`
+- `united`, `city`, `town`, `rovers`
+- `athletic`, `sporting`, `real`, `atletico`
+- `inter`, `milan`, `juventus`
+- `football`, `soccer`, `basketball`
+
+---
+
+## Word Boundary Matching
+
+**Short strings (≤3 characters)** require word boundary matching to prevent false positives:
+
+- Uses regex word boundaries (`\b`) to match whole words only
+- Prevents abbreviations from matching inside other words
+- Example: `"TSV"` won't match `"Etsv"` (requires whole word)
+
+**Long strings (>3 characters)** use substring matching:
+
+- Case-insensitive substring search
+- Example: `"hamburg"` matches `"Etsv Hamburg"` ✅
+
+---
+
+## Common Failure Scenarios
+
+### Scenario 1: Abbreviation Mismatch
+- **Query:** `"Real Betis"` vs `"Olympique Lyonnais"`
+- **Database:** `"Betis"` vs `"Lyon"`
+- **Problem:** "Lyonnais" (longest string) not found in "Lyon" (abbreviation)
+- **Solution:** Rule 3 (Fallback) handles this with bidirectional substring matching
+
+### Scenario 2: Time Mismatch
+- **Query:** `"Real Betis"` vs `"Olympique Lyonnais"` at `2025-11-06 21:00:00`
+- **Database:** `"Betis"` vs `"Lyon"` at `2025-11-06 16:00:00`
+- **Problem:** Adjusted search time (22:00) doesn't match database time (16:00)
+- **Solution:** None - time must match exactly
+
+### Scenario 3: Low Combined Similarity
+- **Query:** `"Real Betis"` vs `"Olympique Lyonnais"`
+- **Database:** `"Betis"` vs `"Lyon"`
+- **Problem:** Team 1: 50%, Team 2: 22.22%, Combined: 72.22% (< 100%)
+- **Solution:** Rule 3 (Fallback) handles this with longest string + substring matching
+
+### Scenario 4: False Positive Prevention
+- **Query:** `"Teutonia Hamburg"` vs `"Niendorfer TSV"`
+- **Database:** `"Etsv Hamburg"` vs `"HEBC Hamburg"`
+- **Problem:** "TSV" would match "Etsv" as substring (false positive)
+- **Solution:** Word boundary matching prevents this - "TSV" requires whole word match
+
+---
+
+## Notes
+
+- All rules require **exact time matching** (after timezone adjustment)
+- Rules are executed in priority order and stop when matches are found
+- Similarity is calculated using Levenshtein distance (edit distance)
+- Team order can be swapped in matching (Team 1 can match Database Team 2)
+- Longest string matching uses substring search for long strings, word boundary for short strings
+- Exact matching uses normalized team names (lowercase, no special chars)
+- Bidirectional substring matching handles abbreviation cases (e.g., "Lyon" in "Lyonnais")

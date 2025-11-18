@@ -87,7 +87,7 @@ class OddsEngine:
         if not self.__host or not self.__user_id:
             raise ValueError("Pinnacle host, API host, or user ID not found in environment variables")
     
-    def start_monitoring(self, interval=60):
+    def start_monitoring(self, interval=30):
         """
         Start monitoring for new odds alerts in a separate thread
         
@@ -183,9 +183,9 @@ class OddsEngine:
         current_time = int(time.time() * 1000)  # Current time in milliseconds
         time_diff_ms = current_time - alert_timestamp
         
-        # If alert is less than a minute old, wait until it's a minute old
-        if time_diff_ms < 60000:  # 60000 ms = 1 minute
-            wait_time_seconds = (60000 - time_diff_ms) / 1000
+        # If alert is less than 30 seconds old, wait until it's 30 seconds old
+        if time_diff_ms < 30000:  # 30000 ms = 30 seconds
+            wait_time_seconds = (30000 - time_diff_ms) / 1000
             logger.info(f"Alert is only {time_diff_ms/1000:.1f} seconds old. Waiting {wait_time_seconds:.1f} seconds before processing.")
             time.sleep(wait_time_seconds)
             logger.info("Resuming alert processing after wait period.")
