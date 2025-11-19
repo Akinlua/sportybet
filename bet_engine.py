@@ -1287,31 +1287,17 @@ class BetEngine(WebsiteOpener):
         Explicitly wait for sportybet market content to render.
         Waits until at least one of the known market containers is present.
         """
-        try:
-            # Ensure document is at least interactive/complete first
-            WebDriverWait(self.driver, timeout_seconds).until(
-                lambda d: d.execute_script("return document.readyState") in ("interactive", "complete")
-            )
-        except Exception:
-            # Continue to element-based checks even if readyState wait fails
-            pass
+        # try:
+        #     # Ensure document is at least interactive/complete first
+        #     WebDriverWait(self.driver, timeout_seconds).until(
+        #         lambda d: d.execute_script("return document.readyState") in ("interactive", "complete")
+        #     )
+        # except Exception:
+        #     # Continue to element-based checks even if readyState wait fails
+        #     pass
         
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
-            lambda d: d.execute_script(
-                "return (function(){"+
-                "var containers = document.querySelectorAll('.m-eventDetail, .m-detail-wrapper, .m-table__wrapper');"+
-                "for (var i=0;i<containers.length;i++){"+
-                "  var titles = containers[i].querySelectorAll('.m-table-header-title');"+
-                "  for (var j=0;j<titles.length;j++){"+
-                "    var t = (titles[j].textContent||'').toLowerCase();"+
-                "    if (t.includes('over/under') || t.includes('over & under') || (t.includes('over') && t.includes('under')) || t.includes('total')) {"+
-                "      return true;"+
-                "    }"+
-                "  }"+
-                "}"+
-                "return false;"+
-                "})();"
-            )
+            lambda d: d.execute_script("return !!document.querySelector('.m-against');")
         )
         # .m-eventDetail
         # "document.querySelector('.m-table-cell--responsive'));"
@@ -1321,11 +1307,15 @@ class BetEngine(WebsiteOpener):
     def __ensure_session_after_nav(self, account, recent_url):
         try:
             logged = False
-            try:
-                logged = bool(self.driver.execute_script("var el=document.querySelector('.m-user-center.m.list, .m-user-center.m-list'); if(!el) return false; var vis=(el.offsetParent!==null); var items=el.querySelectorAll(':scope > *'); return vis && items.length > 0;"))
-                logger.info(f"ensured")
-            except Exception:
-                logged = False
+            # try:
+            #     WebDriverWait(self.driver, 10).until(
+            #         EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m-list"))
+            #     )
+            #     logger.info(f"ensured")
+            #     logged = True
+            #     logger.info(f"logged {logged}")
+            # except Exception:
+            #     logged = False
             # if not logged:
             #     try:
             #         bal = self.__fetch_account_balance(account)
@@ -1336,6 +1326,7 @@ class BetEngine(WebsiteOpener):
             if not logged:
                 try:
                     logged = bool(self.__quick_inline_login(account))
+                    logger.info(f"quick inline login {logged}")
                 except Exception:
                     logged = False
             return logged
@@ -1346,14 +1337,16 @@ class BetEngine(WebsiteOpener):
         try:
             try:
                 self.driver.execute_script("document.querySelectorAll('.af-toast,.m-dialog,.m-modal,.m-balance-wrapper,.m-bablance-wrapper').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
+                logger.info(f"starting loggin")
             except Exception:
                 pass
-            phone_input = WebDriverWait(self.driver, 30).until(
+            phone_input = WebDriverWait(self.driver, 60).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, "input[name='phone']"))
             )
             try:
                 phone_input.clear()
                 phone_input.send_keys(account.username)
+                logger.info(f"phone input keys {account.username}")
             except Exception:
                 try:
                     self.driver.execute_script("arguments[0].value=arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", phone_input, account.username)
@@ -1365,6 +1358,7 @@ class BetEngine(WebsiteOpener):
             try:
                 password_input.clear()
                 password_input.send_keys(account.password)
+                logger.info(f"password input keys {account.password}")
             except Exception:
                 try:
                     self.driver.execute_script("arguments[0].value=arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", password_input, account.password)
@@ -1376,6 +1370,7 @@ class BetEngine(WebsiteOpener):
             try:
                 self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", login_button)
                 login_button.click()
+                logger.info(f"login button click")
             except Exception:
                 try:
                     self.driver.execute_script("arguments[0].click();", login_button)
@@ -1386,6 +1381,8 @@ class BetEngine(WebsiteOpener):
             )
             selenium_cookies = self.driver.get_cookies()
             account.set_cookie_jar(selenium_cookies)
+            logger.info(f"cookies saved")
+
             try:
                 profile_base = os.path.join(os.getcwd(), "profiles")
                 safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
@@ -1396,6 +1393,7 @@ class BetEngine(WebsiteOpener):
                     json.dump(to_save, f)
             except Exception:
                 pass
+            logger.info(f"profile saved")
             return True
         except Exception:
             return False
@@ -1432,44 +1430,49 @@ class BetEngine(WebsiteOpener):
             
             logger.info(f"Navigating to betting page: {bet_url}")
             self.open_url(bet_url)
-            try:
-                self.__ensure_session_after_nav(account, bet_url)
-            except Exception:
-                pass
+            # try:
+            #     self.__ensure_session_after_nav(account, bet_url)
+            # except Exception:
+            #     pass
             # Wait for the market content to render instead of using sleep
+            logger.info("about to check market content")
             try:
                 self.__wait_for_market_content(timeout_seconds=60)
                 logger.info("found market content")
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window: {e}")
+                self.driver.save_screenshot(f"market_content_not_detected.png")
+                # time.sleep(100)
+                return False
+            
             # time.sleep(3)
             
-            try:
-                remove_all = WebDriverWait(self.driver, 5).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "span.m-text-min[data-cms-key='remove_all'][data-cms-page='component_betslip']"))
-                )
-                try:
-                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", remove_all)
-                except Exception:
-                    pass
-                try:
-                    remove_all.click()
-                    logger.info(f"remove all button clicked")
-                except Exception:
-                    try:
-                        self.driver.execute_script("arguments[0].click();", remove_all)
-                    except Exception:
-                        pass
-                try:
-                    ok_btn = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".m-dialog-footer.es-dialog-footer a.es-dialog-btn[data-ret='1']"))
-                    )
-                    ok_btn.click()
-                    logger.info(f"ok button clicked")
-                except Exception:
-                    pass
-            except Exception:
-                pass
+            # try:
+            #     remove_all = WebDriverWait(self.driver, 5).until(
+            #         EC.element_to_be_clickable((By.CSS_SELECTOR, "span.m-text-min[data-cms-key='remove_all'][data-cms-page='component_betslip']"))
+            #     )
+            #     try:
+            #         self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", remove_all)
+            #     except Exception:
+            #         pass
+            #     try:
+            #         remove_all.click()
+            #         logger.info(f"remove all button clicked")
+            #     except Exception:
+            #         try:
+            #             self.driver.execute_script("arguments[0].click();", remove_all)
+            #         except Exception:
+            #             pass
+            #     try:
+            #         ok_btn = WebDriverWait(self.driver, 5).until(
+            #             EC.element_to_be_clickable((By.CSS_SELECTOR, ".m-dialog-footer.es-dialog-footer a.es-dialog-btn[data-ret='1']"))
+            #         )
+            #         ok_btn.click()
+            #         logger.info(f"ok button clicked")
+            #     except Exception:
+            #         pass
+            # except Exception:
+            #     pass
             
             # Find and click the market/outcome
             market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team, sport_id)
@@ -1477,7 +1480,7 @@ class BetEngine(WebsiteOpener):
             if not market_element:
                 logger.error("Could not find market element")
                 self.driver.save_screenshot(f"market_not_found.png")
-                time.sleep(100)
+                # time.sleep(100)
                 return False
             
             try:
@@ -1545,9 +1548,10 @@ class BetEngine(WebsiteOpener):
 
                         try:
                             self.__wait_for_market_content(timeout_seconds=60)
-                            WebDriverWait(self.driver, 10).until(
-                                lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
-                            )
+                            logger.info("found market content")
+                            # WebDriverWait(self.driver, 10).until(
+                            #     lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
+                            # )
                         except Exception:
                             pass
                         me2, _o2 = self.__get_market_selector(target["market_type"], target["outcome"], target.get("points"), False, target.get("home"), target.get("away"))
@@ -1608,7 +1612,15 @@ class BetEngine(WebsiteOpener):
                 except Exception as js_error:
                     logger.error(f"fallback also failed: {js_error}")
                     return False
-            
+                    
+            try:
+                game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + f"_{timestamp}.png"
+                self.driver.save_screenshot(fname)
+                logger.info(f"Saved pre-confirm screenshot: {fname}")
+            except Exception:
+                pass
             # Place the bet using new sportybet selectors
             try:
                 # Wait for the bet button to be clickable
@@ -1618,6 +1630,7 @@ class BetEngine(WebsiteOpener):
                 
                 button_text = place_bet_button.text.strip()
                 logger.info(f"Found bet button with text: {button_text}")
+
                 try:
                     self.driver.execute_script("document.querySelectorAll('.m-bablance-wrapper,.m-balance-wrapper,.af-toast').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
                     self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", place_bet_button)
@@ -1661,14 +1674,6 @@ class BetEngine(WebsiteOpener):
                     confirm_span = WebDriverWait(self.driver, 15).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "button.af-button.af-button--primary span span[data-cms-key='confirm']"))
                     )
-                    try:
-                        game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
-                        timestamp = time.strftime("%Y%m%d-%H%M%S")
-                        fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + f"_{timestamp}.png"
-                        self.driver.save_screenshot(fname)
-                        logger.info(f"Saved pre-confirm screenshot: {fname}")
-                    except Exception:
-                        pass
                     try:
                         self.driver.execute_script("arguments[0].closest('button').click();", confirm_span)
                         logger.info("Clicked confirm button")
@@ -4045,7 +4050,7 @@ class BetEngine(WebsiteOpener):
             self._initialize_browser_if_needed(test_data["accounts"][0])
             print(f"Navigating to: {bet_url}")
             self.open_url(bet_url)
-            time.sleep(5)
+            # time.sleep(5)
             
             # Test the new selector system
             market_element = self.__get_market_selector(line_type, outcome, points, is_first_half=False, sport_id=sport_id)

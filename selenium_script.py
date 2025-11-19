@@ -4,10 +4,28 @@ import os
 import tempfile
 import uuid
 import json
-from seleniumwire import webdriver
+# from seleniumwire import webdriver
+from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+# from webdriver_manager.chrome import ChromeDriverManager
+import logging
+
+# logs directory if it doesn't exist
+os.makedirs('logs', exist_ok=True)
+
+# Initialize loggers
+# bet_logger, odds_logger, auth_logger, error_logger = setup_logging()
+
+# Set up main logger for console output
+logger = logging.getLogger('sporty_betting')
+logger.setLevel(logging.INFO)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
 
 
 class WebsiteOpener:
@@ -44,7 +62,7 @@ class WebsiteOpener:
             print(f"Error reading config file: {e}")
             return None
     
-    def setup_driver(self, headless):
+    def setup_driver2(self, headless):
         """Set up the Chrome WebDriver with Selenium Wire for proxy authentication."""
 
         # Get proxy from config if not provided
@@ -54,28 +72,28 @@ class WebsiteOpener:
         # Set up Chrome options
         options = Options()
         # if headless:
-        options.add_argument("--headless=new")
+        # options.add_argument("--headless=new")
         
         # Additional options for better compatibility
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         # options.add_argument('--disable-dev-shm-usage')
-        # options.add_argument('--disable-gpu')
-        # options.add_argument('--window-size=1920,1080')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920,1080')
         # options.add_argument("--no-sandbox")
-        # options.add_argument("--disable-dev-shm-usage")
-        # options.add_argument("--disable-gpu")
-        # options.add_argument("--disable-extensions")
-        # options.add_argument("--disable-plugins")
-        # options.add_argument("--disable-images")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-plugins")
+        options.add_argument("--disable-images")
         
-        # options.add_argument("--no-first-run")
-        # options.add_argument("--no-default-browser-check")
-        # options.add_argument("--disable-infobars")
-        # options.add_argument("--disable-notifications")
-        # options.add_argument("--memory-pressure-off")
-        # options.add_argument("--max_old_space_size=4096")
+        options.add_argument("--no-first-run")
+        options.add_argument("--no-default-browser-check")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-notifications")
+        options.add_argument("--memory-pressure-off")
+        options.add_argument("--max_old_space_size=4096")
 
         # if self.profile_path:
         #     try:
@@ -89,7 +107,7 @@ class WebsiteOpener:
         options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
         
         # Set page load strategy
-        # options.page_load_strategy = 'eager'
+        options.page_load_strategy = 'eager'
         
         # Set up Selenium Wire options for proxy authentication
         seleniumwire_options = {}
@@ -122,33 +140,93 @@ class WebsiteOpener:
                 options=options
             )
             print(f"Driver successful: {self.driver}")
-            # try:
-            #     if hasattr(self.driver, 'request_interceptor'):
-            #         def _req_interceptor(request):
-            #             try:
-            #                 ae = request.headers.get('Accept-Encoding')
-            #                 if ae:
-            #                     try:
-            #                         del request.headers['Accept-Encoding']
-            #                     except Exception:
-            #                         pass
-            #             except Exception:
-            #                 pass
-            #         self.driver.request_interceptor = _req_interceptor
-            #     if hasattr(self.driver, 'response_interceptor'):
-            #         def _resp_interceptor(request, response):
-            #             try:
-            #                 ce = response.headers.get('Content-Encoding')
-            #                 if ce and 'gzip' in str(ce).lower():
-            #                     try:
-            #                         del response.headers['Content-Encoding']
-            #                     except Exception:
-            #                         pass
-            #             except Exception:
-            #                 pass
-            #         self.driver.response_interceptor = _resp_interceptor
-            # except Exception as _ie:
-            #     print(f"Interceptor setup error: {_ie}")
+            try:
+                if hasattr(self.driver, 'request_interceptor'):
+                    def _req_interceptor(request):
+                        try:
+                            ae = request.headers.get('Accept-Encoding')
+                            if ae:
+                                try:
+                                    del request.headers['Accept-Encoding']
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                    self.driver.request_interceptor = _req_interceptor
+                if hasattr(self.driver, 'response_interceptor'):
+                    def _resp_interceptor(request, response):
+                        try:
+                            ce = response.headers.get('Content-Encoding')
+                            if ce and 'gzip' in str(ce).lower():
+                                try:
+                                    del response.headers['Content-Encoding']
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                    self.driver.response_interceptor = _resp_interceptor
+            except Exception as _ie:
+                print(f"Interceptor setup error: {_ie}")
+        except Exception as e:
+            print(f"Error setting up ChromeDriver: {e}")
+            raise
+
+
+    def setup_driver(self, headless):
+        """Set up the Chrome WebDriver with Selenium Wire for proxy authentication."""
+        
+        # Get proxy from config if not provided
+        if not self.proxy:
+            self.proxy = self.get_proxy_from_config()
+
+        options = Options()
+        # options.add_argument("--headless=new")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        # options.add_argument("--proxy-server=http://ng.decodo.com:42001")
+        # options.add_argument("--headless=new")
+        # options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+
+        # Create a brand-new temp unique profile for Selenium
+        # profile_path = f"./profiles/{uuid.uuid4()}"
+        # profile_path = os.path.abspath(f"./profiles/{uuid.uuid4()}")
+        # os.makedirs(profile_path, exist_ok=True)
+        # options.add_argument(f"--user-data-dir={profile_path}")
+        # options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+        # If you want to use Default Chrome profile instead:
+        # options.add_argument("--user-data-dir=/Users/user/Library/Application Support/Google/Chrome")
+        # options.add_argument("--profile-directory=Default")
+        # Configure selenium-wire options with proxy
+        seleniumwire_options = {}
+
+        if self.proxy:
+            print(f"Configuring proxy: {self.proxy}")
+            
+            # Parse the proxy URL to extract components
+            if self.proxy.startswith("http://"):
+                proxy_url = self.proxy
+            else:
+                proxy_url = f"http://{self.proxy}"
+                
+            options.add_argument(f"--proxy-server={proxy_url}")
+            
+            # Configure selenium-wire options with proxy
+            seleniumwire_options = {
+                "proxy": {
+                    "http": proxy_url,
+                    "https": proxy_url
+                }
+            }
+            
+            print(f"Configured Selenium Wire proxy: {proxy_url}")
+        
+        
+        # Initialize the Chrome driver with Selenium Wire
+        try:
+            self.driver = webdriver.Chrome(options=options)
         except Exception as e:
             print(f"Error setting up ChromeDriver: {e}")
             raise
@@ -162,9 +240,11 @@ class WebsiteOpener:
         """
         try:
             self.driver.get(url)
+            logger.info(f"Successfully opened: {url}")
             print(f"Successfully opened: {url}")
             return True
         except Exception as e:
+            logger.error(f"Error opening URL: {e}")
             print(f"Error opening URL: {e}")
             return False
     

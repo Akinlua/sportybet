@@ -1,0 +1,14 @@
+# selenium==4.10.0
+# requests==2.31.0
+# python-dotenv==1.0.0
+# webdriver-manager==4.0.0
+# scipy
+# selenium_driverless
+# nest_asyncio
+# 2captcha-python
+# psutil
+# blinker==1.7.0
+# selenium-wire
+# setuptools
+pip install --upgrade pip setuptools wheel
+pip install --upgrade pip

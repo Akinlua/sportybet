@@ -6,7 +6,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://brd-customer-hl_3fa1037b-zone-datacenter_proxy1-country-ng:be0682squyj3@brd.superproxy.io:33335"
+            "proxy": "http://ng.decodo.com:42001"
         }
     ],
     "max_total_concurrent_bets": 20,
