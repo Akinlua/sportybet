@@ -180,7 +180,7 @@ class WebsiteOpener:
             self.proxy = self.get_proxy_from_config()
 
         options = Options()
-        # options.add_argument("--headless=new")
+        options.add_argument("--headless=new")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
@@ -210,7 +210,7 @@ class WebsiteOpener:
                 proxy_url = self.proxy
             else:
                 proxy_url = f"http://{self.proxy}"
-                
+
             options.add_argument(f"--proxy-server={proxy_url}")
             
             # Configure selenium-wire options with proxy
