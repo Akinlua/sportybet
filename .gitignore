@@ -6,3 +6,4 @@ chromedriver-mac-arm64.zip
 chromedriver-mac-arm64
 venv
 /profiles
+py311env/
