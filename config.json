@@ -6,11 +6,11 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42001"
+            "proxy": null
         }
     ],
     "max_total_concurrent_bets": 20,
-    "use_proxies": true,
+    "use_proxies": false,
     "immediate_bet_placement": true,
     "browser": {
         "use_existing": true,

@@ -1617,7 +1617,19 @@ class BetEngine(WebsiteOpener):
                 game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + f"_{timestamp}.png"
-                self.driver.save_screenshot(fname)
+                try:
+                    self.driver.execute_cdp_cmd("Page.enable", {})
+                    metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                    cs = metrics.get("contentSize", {})
+                    width = int(cs.get("width", 1920))
+                    height = int(cs.get("height", 1080))
+                    self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": width, "height": height, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                    shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                    import base64
+                    with open(fname, "wb") as f:
+                        f.write(base64.b64decode(shot.get("data", "")))
+                except Exception:
+                    self.driver.save_screenshot(fname)
                 logger.info(f"Saved pre-confirm screenshot: {fname}")
             except Exception:
                 pass
