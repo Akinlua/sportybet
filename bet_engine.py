@@ -1340,6 +1340,18 @@ class BetEngine(WebsiteOpener):
                 logger.info(f"starting loggin")
             except Exception:
                 pass
+            try:
+                WebDriverWait(self.driver, 2).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".m-user-center.m.list, .m-user-center.m-list"))
+                )
+                selenium_cookies = self.driver.get_cookies()
+                account.set_cookie_jar(selenium_cookies)
+                logger.info("actually logged in already")
+                return True
+            except Exception:
+                pass
+            logger.info("actually not logged in already")
+
             phone_input = WebDriverWait(self.driver, 60).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, "input[name='phone']"))
             )
@@ -1780,6 +1792,47 @@ class BetEngine(WebsiteOpener):
                         logger.info("✅ Bet placed successfully!")
                         elapsed = time.time() - start_bet_ts
                         logger.info(f"Bet placement took {elapsed:.2f}s")
+
+                        try:
+                            ok_btn = WebDriverWait(self.driver, 5).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, ".m-btn-wrapper.m-ok-wrap button.af-button.af-button--primary[data-action='close'][data-ret='close']"))
+                            )
+                            try:
+                                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", ok_btn)
+                            except Exception:
+                                pass
+                            try:
+                                ok_btn.click()
+                            except Exception:
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", ok_btn)
+                                except Exception:
+                                    pass
+                            time.sleep(1)
+                            try:
+                                dn = f"finally_done_{(target.get('home') or '')}_vs_{(target.get('away') or '')}".strip("_") or "finally_done"
+                                ts = time.strftime("%Y%m%d-%H%M%S")
+                                fname = re.sub(r"[^A-Za-z0-9_.-]", "_", dn) + f"_{ts}.png"
+                                try:
+                                    self.driver.execute_cdp_cmd("Page.enable", {})
+                                    m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                                    cs = m.get("contentSize", {})
+                                    w = int(cs.get("width", 1920))
+                                    h = int(cs.get("height", 1080))
+                                    self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                                    shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                                    import base64
+                                    with open(fname, "wb") as f:
+                                        f.write(base64.b64decode(shot.get("data", "")))
+                                except Exception:
+                                    self.driver.save_screenshot(fname)
+                                logger.info(f"Saved final screenshot: {fname}")
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+
+                        
                         return True
                     else:
                         logger.warning(f"⚠️ Unexpected success message: {success_text}")
