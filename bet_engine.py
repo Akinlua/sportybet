@@ -2752,6 +2752,7 @@ class BetEngine(WebsiteOpener):
             logger.info(f"Asian handicap away team: inverting points from {points} to {pinnacle_points} for Pinnacle odds")
         
         # Fetch latest odds from Pinnacle API if event ID is available
+        logger.info(f"fetching latest pinnacle odds for event id {event_id}")
         latest_prices = self.__fetch_latest_pinnacle_odds(event_id, line_type, pinnacle_points, outcome, period_key)
         
         # If we couldn't get latest odds, return -100 EV instead of using fallback
@@ -2862,6 +2863,14 @@ class BetEngine(WebsiteOpener):
                 return None
                 
             event_data = response.json()
+            try:
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                fname = f"pinnacle_latest_odds_{re.sub(r'[^A-Za-z0-9_.-]','_', str(event_id))}_{ts}.json"
+                with open(fname, "w") as f:
+                    json.dump(event_data, f)
+                logger.info(f"Wrote Pinnacle latest odds response to {fname}")
+            except Exception:
+                pass
             if not event_data or "data" not in event_data or not event_data["data"]:
                 logger.info("No data returned from Pinnacle API")
                 return None
@@ -2883,15 +2892,31 @@ class BetEngine(WebsiteOpener):
             # Extract the appropriate odds based on line type
             decimal_prices = {}
             
+            if line_type in ("spread", "total") and points is None:
+                logger.info("Points not provided for line type requiring points; skipping latest odds fetch")
+                return None
+            
             if line_type == "money_line":
                 money_line = period.get("money_line", {})
                 if money_line:  # Check if money_line data exists
-                    if "home" in money_line:
-                        decimal_prices["home"] = float(money_line["home"])
-                    if "away" in money_line:
-                        decimal_prices["away"] = float(money_line["away"])
-                    if "draw" in money_line:
-                        decimal_prices["draw"] = float(money_line["draw"])
+                    try:
+                        val = money_line.get("home")
+                        if val is not None:
+                            decimal_prices["home"] = float(val)
+                    except (ValueError, TypeError):
+                        pass
+                    try:
+                        val = money_line.get("away")
+                        if val is not None:
+                            decimal_prices["away"] = float(val)
+                    except (ValueError, TypeError):
+                        pass
+                    try:
+                        val = money_line.get("draw")
+                        if val is not None:
+                            decimal_prices["draw"] = float(val)
+                    except (ValueError, TypeError):
+                        pass
                 else:
                     logger.info("No money_line data found in period")
                     
@@ -2912,10 +2937,18 @@ class BetEngine(WebsiteOpener):
                             continue
                     
                     if exact_spread:
-                        if "home" in exact_spread:
-                            decimal_prices["home"] = float(exact_spread["home"])
-                        if "away" in exact_spread:
-                            decimal_prices["away"] = float(exact_spread["away"])
+                        try:
+                            val = exact_spread.get("home")
+                            if val is not None:
+                                decimal_prices["home"] = float(val)
+                        except (ValueError, TypeError):
+                            pass
+                        try:
+                            val = exact_spread.get("away")
+                            if val is not None:
+                                decimal_prices["away"] = float(val)
+                        except (ValueError, TypeError):
+                            pass
                     else:
                         logger.info(f"No exact spread match found for points: {points}")
                 else:
@@ -2938,10 +2971,18 @@ class BetEngine(WebsiteOpener):
                             continue
                     
                     if exact_total:
-                        if "over" in exact_total:
-                            decimal_prices["home"] = float(exact_total["over"])  # Over as home
-                        if "under" in exact_total:
-                            decimal_prices["away"] = float(exact_total["under"])  # Under as away
+                        try:
+                            val = exact_total.get("over")
+                            if val is not None:
+                                decimal_prices["home"] = float(val)  # Over as home
+                        except (ValueError, TypeError):
+                            pass
+                        try:
+                            val = exact_total.get("under")
+                            if val is not None:
+                                decimal_prices["away"] = float(val)  # Under as away
+                        except (ValueError, TypeError):
+                            pass
                     else:
                         logger.info(f"No exact total match found for points: {points}")
                 else:
@@ -2958,6 +2999,7 @@ class BetEngine(WebsiteOpener):
         Fetch available Pinnacle points for totals and spreads for a specific event/period.
         Returns a dict with keys 'totals' and 'spreads'.
         """
+        logger.info(f"fetching available pinnacle points for event id {event_id}")
         if not event_id:
             logger.info("No event ID provided, cannot fetch available points")
             return {"totals": [], "spreads": []}
