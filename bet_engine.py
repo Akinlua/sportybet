@@ -2687,8 +2687,8 @@ class BetEngine(WebsiteOpener):
                         bet_data["market_type"],
                         bet_data["outcome"],
                         bet_data["odds"],
-                        10,
-                        # bet_data["stake"],  # Use pre-calculated stake
+                        # 10,
+                        bet_data["stake"],  # Use pre-calculated stake
                         bet_data["shaped_data"]["category"]["meta"].get("value"),
                         bet_data.get("is_first_half", False),
                         bet_data["shaped_data"]["game"]["home"],  # home_team from shaped_data
