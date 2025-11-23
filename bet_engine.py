@@ -1625,26 +1625,26 @@ class BetEngine(WebsiteOpener):
                     logger.error(f"fallback also failed: {js_error}")
                     return False
                     
-            try:
-                game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
-                timestamp = time.strftime("%Y%m%d-%H%M%S")
-                fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + f"_{timestamp}.png"
-                try:
-                    self.driver.execute_cdp_cmd("Page.enable", {})
-                    metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
-                    cs = metrics.get("contentSize", {})
-                    width = int(cs.get("width", 1920))
-                    height = int(cs.get("height", 1080))
-                    self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": width, "height": height, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
-                    shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
-                    import base64
-                    with open(fname, "wb") as f:
-                        f.write(base64.b64decode(shot.get("data", "")))
-                except Exception:
-                    self.driver.save_screenshot(fname)
-                logger.info(f"Saved pre-confirm screenshot: {fname}")
-            except Exception:
-                pass
+            # try:
+            #     game_name = f"{home_team}_vs_{away_team}" if home_team and away_team else "bet_confirmation"
+            #     timestamp = time.strftime("%Y%m%d-%H%M%S")
+            #     fname = re.sub(r"[^A-Za-z0-9_.-]", "_", game_name) + f"_{timestamp}.png"
+            #     try:
+            #         self.driver.execute_cdp_cmd("Page.enable", {})
+            #         metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+            #         cs = metrics.get("contentSize", {})
+            #         width = int(cs.get("width", 1920))
+            #         height = int(cs.get("height", 1080))
+            #         self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": width, "height": height, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+            #         shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+            #         import base64
+            #         with open(fname, "wb") as f:
+            #             f.write(base64.b64decode(shot.get("data", "")))
+            #     except Exception:
+            #         self.driver.save_screenshot(fname)
+            #     logger.info(f"Saved pre-confirm screenshot: {fname}")
+            # except Exception:
+            #     pass
             # Place the bet using new sportybet selectors
             try:
                 # Wait for the bet button to be clickable
@@ -1809,26 +1809,26 @@ class BetEngine(WebsiteOpener):
                                 except Exception:
                                     pass
                             time.sleep(1)
-                            try:
-                                dn = f"finally_done_{(target.get('home') or '')}_vs_{(target.get('away') or '')}".strip("_") or "finally_done"
-                                ts = time.strftime("%Y%m%d-%H%M%S")
-                                fname = re.sub(r"[^A-Za-z0-9_.-]", "_", dn) + f"_{ts}.png"
-                                try:
-                                    self.driver.execute_cdp_cmd("Page.enable", {})
-                                    m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
-                                    cs = m.get("contentSize", {})
-                                    w = int(cs.get("width", 1920))
-                                    h = int(cs.get("height", 1080))
-                                    self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
-                                    shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
-                                    import base64
-                                    with open(fname, "wb") as f:
-                                        f.write(base64.b64decode(shot.get("data", "")))
-                                except Exception:
-                                    self.driver.save_screenshot(fname)
-                                logger.info(f"Saved final screenshot: {fname}")
-                            except Exception:
-                                pass
+                            # try:
+                            #     dn = f"finally_done_{(target.get('home') or '')}_vs_{(target.get('away') or '')}".strip("_") or "finally_done"
+                            #     ts = time.strftime("%Y%m%d-%H%M%S")
+                            #     fname = re.sub(r"[^A-Za-z0-9_.-]", "_", dn) + f"_{ts}.png"
+                            #     try:
+                            #         self.driver.execute_cdp_cmd("Page.enable", {})
+                            #         m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                            #         cs = m.get("contentSize", {})
+                            #         w = int(cs.get("width", 1920))
+                            #         h = int(cs.get("height", 1080))
+                            #         self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                            #         shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                            #         import base64
+                            #         with open(fname, "wb") as f:
+                            #             f.write(base64.b64decode(shot.get("data", "")))
+                            #     except Exception:
+                            #         self.driver.save_screenshot(fname)
+                            #     logger.info(f"Saved final screenshot: {fname}")
+                            # except Exception:
+                            #     pass
                         except Exception:
                             pass
 
@@ -2863,14 +2863,14 @@ class BetEngine(WebsiteOpener):
                 return None
                 
             event_data = response.json()
-            try:
-                ts = time.strftime("%Y%m%d-%H%M%S")
-                fname = f"pinnacle_latest_odds_{re.sub(r'[^A-Za-z0-9_.-]','_', str(event_id))}_{ts}.json"
-                with open(fname, "w") as f:
-                    json.dump(event_data, f)
-                logger.info(f"Wrote Pinnacle latest odds response to {fname}")
-            except Exception:
-                pass
+            # try:
+            #     ts = time.strftime("%Y%m%d-%H%M%S")
+            #     fname = f"pinnacle_latest_odds_{re.sub(r'[^A-Za-z0-9_.-]','_', str(event_id))}_{ts}.json"
+            #     with open(fname, "w") as f:
+            #         json.dump(event_data, f)
+            #     logger.info(f"Wrote Pinnacle latest odds response to {fname}")
+            # except Exception:
+            #     pass
             if not event_data or "data" not in event_data or not event_data["data"]:
                 logger.info("No data returned from Pinnacle API")
                 return None
