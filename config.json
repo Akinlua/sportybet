@@ -6,7 +6,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": null
+            "proxy": "http://ng.decodo.com:42001"
         },
         {
             "username": "7036037447",
@@ -14,7 +14,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": null
+            "proxy": "http://ng.decodo.com:42011"
         },
         {
             "username": "8149394431",
@@ -22,7 +22,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": null
+            "proxy": "http://ng.decodo.com:42024"
         },
         {
             "username": "7025027406",
@@ -30,7 +30,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": null
+            "proxy": "http://ng.decodo.com:42032"
         }
     ],
     "max_total_concurrent_bets": 20,
@@ -55,16 +55,28 @@
         "max_pinnacle_odds": 3.5,
         "odds_based_stakes": {
             "low_odds": {
-                "max_odds": 5.5,
-                "min_odds": 1.5,
-                "min_stake": 2000,
-                "max_stake": 2000
+                "max_odds": 1.99,
+                "min_odds": 0.0,
+                "min_stake": 50,
+                "max_stake": 50
             },
             "medium_odds": {
-                "min_odds": 1.5,
-                "max_odds": 5.5,
-                "min_stake": 2000,
-                "max_stake": 2000
+                "min_odds": 2.0,
+                "max_odds": 3.0,
+                "min_stake": 50,
+                "max_stake": 50
+            },
+            "high_odds": {
+                "min_odds": 3.0,
+                "max_odds": 5.0,
+                "min_stake": 50,
+                "max_stake": 50
+            },
+            "very_low_odds": {
+                "min_odds": 1.0,
+                "max_odds": 1.5,
+                "min_stake": 50,
+                "max_stake": 50
             }
         }
     }
