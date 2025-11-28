@@ -49,22 +49,22 @@
     "bet_settings": {
         "min_ev": 5.5,
         "kelly_fraction": 0.3,
-        "min_stake": 50,
-        "max_stake": 50,
+        "min_stake": 5000,
+        "max_stake": 5000,
         "bankroll": 1000,
         "max_pinnacle_odds": 3.5,
         "odds_based_stakes": {
             "low_odds": {
                 "max_odds": 1.99,
                 "min_odds": 0.0,
-                "min_stake": 50,
-                "max_stake": 50
+                "min_stake": 5000,
+                "max_stake": 5000
             },
             "medium_odds": {
                 "min_odds": 2.0,
-                "max_odds": 3.0,
-                "min_stake": 50,
-                "max_stake": 50
+                "max_odds": 5.0,
+                "min_stake": 5000,
+                "max_stake": 5000
             },
             "high_odds": {
                 "min_odds": 3.0,
