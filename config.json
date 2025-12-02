@@ -1,14 +1,6 @@
 {
     "accounts": [
         {
-            "username": "9044976808",
-            "password": "Amarachi2",
-            "active": true,
-            "max_concurrent_bets": 20,
-            "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42001"
-        },
-        {
             "username": "7036037447",
             "password": "@IfeeGod2021",
             "active": true,

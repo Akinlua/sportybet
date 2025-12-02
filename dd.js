@@ -43,5 +43,13 @@ const proxy = 'http://brd-customer-hl_3fa1037b-zone-datacenter_proxy1-country-ng
             "proxy": "http://ng.decodo.com:42032"
         }
 
+          {
+            "username": "9044976808",
+            "password": "Amarachi2",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42001"
+        },
 
 
