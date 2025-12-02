@@ -9,6 +9,7 @@ import threading
 import queue
 import logging
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode, quote
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
@@ -201,6 +202,9 @@ class BetEngine(WebsiteOpener):
         self.__browser_open = False
         self._current_proxy = None
         
+        # Thread-local drivers per worker
+        self.__thread_drivers = {}
+        
         # Track processed games to avoid reprocessing
         self.__processed_games = set()
         
@@ -230,6 +234,19 @@ class BetEngine(WebsiteOpener):
         
         # Start bet worker thread for queued bet placement
         self.__start_bet_worker()
+    
+    # Thread-local driver property to avoid cross-thread overrides
+    @property
+    def driver(self):
+        tid = threading.get_ident()
+        return self.__thread_drivers.get(tid)
+    
+    @driver.setter
+    def driver(self, value):
+        try:
+            self.__thread_drivers[threading.get_ident()] = value
+        except Exception:
+            pass
     
     def _initialize_browser_if_needed(self, account=None):
         """Initialize the browser if it hasn't been initialized yet
@@ -548,9 +565,12 @@ class BetEngine(WebsiteOpener):
 
             
     def __start_bet_worker(self):
-        """Start a worker thread to process bet queue"""
-        self.__worker_thread = threading.Thread(target=self.__process_bet_queue, daemon=True)
-        self.__worker_thread.start()
+        workers = int(self.__config.get("max_total_concurrent_bets", 20))
+        self.__worker_threads = []
+        for _ in range(max(1, workers)):
+            t = threading.Thread(target=self.__process_bet_queue, daemon=True)
+            t.start()
+            self.__worker_threads.append(t)
         
     def __process_bet_queue(self):
         """Process bets from the queue"""
@@ -678,8 +698,12 @@ class BetEngine(WebsiteOpener):
             raise ValueError("sportybet username or password not found for account")
         
         try:
-            # Initialize browser with account-specific proxy
-            self._initialize_browser_if_needed(account)
+            if not hasattr(self, 'driver') or not self.driver:
+                profile_base = os.path.join(os.getcwd(), "profiles")
+                safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+                profile_path = os.path.join(profile_base, safe_name)
+                opener = WebsiteOpener(headless=self.__headless, proxy=account.proxy, config_file="config.json", profile_path=profile_path)
+                self.driver = opener.driver
             
             # Fast-path: try persisted cookies to verify session via balance before hitting login page
             try:
@@ -1241,6 +1265,7 @@ class BetEngine(WebsiteOpener):
                 return None
             
             sport = event_details.get("sport") or {}
+            logger.info(f"sport: {sport}")
             sname = (sport.get("name") or "").strip()
             category = sport.get("category") or {}
             cname = (category.get("name") or "").strip()
@@ -1258,6 +1283,7 @@ class BetEngine(WebsiteOpener):
             tournament_seg = _seg(tname)
             match_seg = _seg(f"{home}_vs_{away}")
             id_seg = quote(str(event_id), safe=":")
+            logger.info(f"spor_seg: {sport_seg}, category_seg: {category_seg}, tournament_seg: {tournament_seg}, match_seg: {match_seg}, id_seg: {id_seg}")
             if sport_seg and category_seg and tournament_seg and match_seg:
                 bet_url = f"{self.__bet_host}/ng/sport/{sport_seg}/{category_seg}/{tournament_seg}/{match_seg}/{id_seg}"
             else:
@@ -2661,49 +2687,64 @@ class BetEngine(WebsiteOpener):
             logger.info(f"Checking {len(self.__accounts)} accounts")
             logger.info(f"account names: {[account.username for account in self.__accounts]}")
 
-            for account in self.__accounts:
-                logger.info(f"just checking account {account.username}")
-            for account in self.__accounts:
+            available_accounts = [account for account in self.__accounts if account.can_place_bet()]
+            logger.info(f"Available accounts: {[a.username for a in available_accounts]}")
+            
+            def _place_for_account(account):
                 logger.info(f"Checking account {account.username}")
-                if account.can_place_bet():
-                    logger.info(f"Account {account.username} can place bet")
-                    # Check if login is needed
-                    # if account.needs_login():
-                    #     try:
-                    #         self.__do_login_for_account(account)
-                    #     except Exception as e:
-                    #         print(f"Failed to login to account {account.username}: {e}")
-                    #         continue  # Try next account
-                    
-                    # Try to place bet with this account
+                success = False
+                try:
                     account.increment_bets()
-                    
-                    # Store shaped_data for EV recalculation if odds change
                     self._current_shaped_data = bet_data["shaped_data"]
-                    
-                    success = self.__place_bet_with_selenium(
-                        account,
-                        self.__generate_sportybet_bet_url(bet_data["event_details"]),
-                        bet_data["market_type"],
-                        bet_data["outcome"],
-                        bet_data["odds"],
-                        # 10,
-                        bet_data["stake"],  # Use pre-calculated stake
-                        bet_data["shaped_data"]["category"]["meta"].get("value"),
-                        bet_data.get("is_first_half", False),
-                        bet_data["shaped_data"]["game"]["home"],  # home_team from shaped_data
-                        bet_data["shaped_data"]["game"]["away"],  # away_team from shaped_data
-                        bet_data.get("sport_id", 1)  # sport_id for basketball support
-                    )
-                    
-                    if success:
+                    profile_base = os.path.join(os.getcwd(), "profiles")
+                    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", account.username) if account and account.username else "default"
+                    profile_path = os.path.join(profile_base, safe_name)
+                    opener = WebsiteOpener(headless=self.__headless, proxy=account.proxy, config_file="config.json", profile_path=profile_path)
+                    old_driver = getattr(self, 'driver', None)
+                    self.driver = opener.driver
+                    try:
+                        success = self.__place_bet_with_selenium(
+                            account,
+                            self.__generate_sportybet_bet_url(bet_data["event_details"]),
+                            bet_data["market_type"],
+                            bet_data["outcome"],
+                            bet_data["odds"],
+                            bet_data["stake"],
+                            bet_data["shaped_data"]["category"]["meta"].get("value"),
+                            bet_data.get("is_first_half", False),
+                            bet_data["shaped_data"]["game"]["home"],
+                            bet_data["shaped_data"]["game"]["away"],
+                            bet_data.get("sport_id", 1)
+                        )
+                    finally:
+                        try:
+                            if hasattr(self, 'driver') and self.driver:
+                                self.driver.quit()
+                        except Exception:
+                            pass
+                        self.driver = old_driver
+                except Exception as e:
+                    logger.error(f"Error placing bet for {account.username}: {e}")
+                finally:
+                    try:
                         account.decrement_bets()
-                        logger.info(f"Bet placed successfully with account {account.username}")
-                        any_bet_placed = True
-                    else:
-                        # If bet failed, decrement the bet counter
-                        account.decrement_bets()
-                else:
+                    except Exception:
+                        pass
+                return success
+            
+            if available_accounts:
+                max_workers = min(max_total_bets, len(available_accounts))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {executor.submit(_place_for_account, account): account for account in available_accounts}
+                    for future in as_completed(futures):
+                        try:
+                            if future.result():
+                                any_bet_placed = True
+                                logger.info(f"Bet placed successfully with account {futures[future].username}")
+                        except Exception as e:
+                            logger.error(f"Worker error for {futures[future].username}: {e}")
+            else:
+                for account in self.__accounts:
                     logger.info(f"Account {account.username} cannot place bet")
             
             if not any_bet_placed:

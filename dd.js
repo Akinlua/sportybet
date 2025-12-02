@@ -15,3 +15,33 @@ const proxy = 'http://brd-customer-hl_3fa1037b-zone-datacenter_proxy1-country-ng
     console.error('Error:', error.message);
   }
 })();
+
+
+,
+        {
+            "username": "7036037447",
+            "password": "@IfeeGod2021",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42011"
+        },
+        {
+            "username": "8149394431",
+            "password": "Malima2025",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42024"
+        },
+        {
+            "username": "7025027406",
+            "password": "@Royalbird1",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42032"
+        }
+
+
+

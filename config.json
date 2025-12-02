@@ -14,7 +14,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42011"
+            "proxy": "http://ng.decodo.com:42054"
         },
         {
             "username": "8149394431",
