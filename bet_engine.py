@@ -925,7 +925,7 @@ class BetEngine(WebsiteOpener):
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 screenshot_path = f"login_error_{timestamp}.png"
                 self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Login error screenshot saved to {screenshot_path}")
+                logger.info(f"Login error screenshot saved to username-{account.username} {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to take error screenshot: {screenshot_error}")
             
@@ -1460,25 +1460,25 @@ class BetEngine(WebsiteOpener):
         """
         try:
             # Always login before placing bet (this will also initialize browser if needed)
-            logger.info("Logging in before placing bet...")
+            logger.info(f"Logging in before placing bet... username-{account.username}")
             login_success = self.__do_login_for_account(account)
             if not login_success:
-                logger.error("Login failed, cannot place bet")
+                logger.error(f"Login failed, cannot place bet username-{account.username}")
                 return False
             
-            logger.info(f"Navigating to betting page: {bet_url}")
+            logger.info(f"Navigating to betting page: {bet_url} username-{account.username}")
             self.open_url(bet_url)
             # try:
             #     self.__ensure_session_after_nav(account, bet_url)
             # except Exception:
             #     pass
             # Wait for the market content to render instead of using sleep
-            logger.info("about to check market content")
+            logger.info(f"about to check market content username-{account.username}")
             try:
                 self.__wait_for_market_content(timeout_seconds=60)
                 logger.info("found market content")
             except Exception as e:
-                logger.warning(f"Market content not detected within wait window: {e}")
+                logger.warning(f"Market content not detected within wait window username-{account.username}: {e}")
                 self.driver.save_screenshot(f"market_content_not_detected.png")
                 # time.sleep(100)
                 return False
@@ -1516,7 +1516,7 @@ class BetEngine(WebsiteOpener):
             market_element, odds_from_api = self.__get_market_selector(market_type, outcome, points, is_first_half, home_team, away_team, sport_id)
             logger.info(f"Market element: {market_element}")
             if not market_element:
-                logger.error("Could not find market element")
+                logger.error(f"Could not find market element username-{account.username}")
                 self.driver.save_screenshot(f"market_not_found.png")
                 # time.sleep(100)
                 return False
@@ -1531,11 +1531,11 @@ class BetEngine(WebsiteOpener):
                         odds_diff = abs(actual_odds - odds)
                         
                         if odds_diff > 0.1:  # Allow 0.1 difference
-                            logger.error(f"⚠️ Odds mismatch! Expected: {odds}, Actual: {actual_odds}")
+                            logger.error(f"⚠️ Odds mismatch! Expected: {odds}, Actual: {actual_odds} username-{account.username}")
                             logger.error("Bet cancelled due to odds change")
                             return False
                         else:
-                            logger.info(f"✅ Odds verified: {actual_odds} (expected: {odds})")
+                            logger.info(f"✅ Odds verified: {actual_odds} (expected: {odds})  username-{account.username}")
                     else:
                         logger.error("No odds from API")    
                         return False
@@ -1713,7 +1713,7 @@ class BetEngine(WebsiteOpener):
                             actions.move_to_element(place_bet_button).click().perform()
                             logger.info("Clicked bet button via ActionChains")
                         except Exception as action_error:
-                            logger.error(f"All place bet click methods failed: {action_error}")
+                            logger.error(f"All place bet click methods failed username-{account.username}: {action_error}")
                             try:
                                 ts = time.strftime("%Y%m%d-%H%M%S")
                                 self.driver.save_screenshot(f"place_bet_click_error_{ts}.png")
@@ -1871,7 +1871,7 @@ class BetEngine(WebsiteOpener):
                         timestamp = time.strftime("%Y%m%d-%H%M%S")
                         screenshot_path = f"failed_bet_screenshot_{timestamp}.png"
                         self.driver.save_screenshot(screenshot_path)
-                        logger.info(f"Failed bet screenshot saved to {screenshot_path}")
+                        logger.info(f"Failed bet screenshot saved to username-{account.username} {screenshot_path}")
                     except Exception as screenshot_error:
                         logger.error(f"Failed to take failed bet screenshot: {screenshot_error}")
                     return False
@@ -1895,7 +1895,7 @@ class BetEngine(WebsiteOpener):
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 screenshot_path = f"error_screenshot_{timestamp}.png"
                 self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Error screenshot saved to {screenshot_path}")
+                logger.info(f"Error screenshot saved to username-{account.username} {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to take error screenshot: {screenshot_error}")
             import traceback
