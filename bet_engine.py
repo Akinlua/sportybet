@@ -3716,6 +3716,7 @@ class BetEngine(WebsiteOpener):
                         modified_shaped_data["periodNumber"] = "1"
                     
                     # Check for duplicate bet before placing
+                    logging.info(f"event details here: {event_details} ")
                     event_id = event_details.get("id", "unknown")
                     market_id = market_type
                     outcome_id = outcome.upper()
