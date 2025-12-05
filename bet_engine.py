@@ -1935,7 +1935,7 @@ class BetEngine(WebsiteOpener):
                 pass
         else:
             try:
-                logger.info("clicking main")
+                # logger.info("clicking main")
                 nav_items = self.driver.find_elements(By.CSS_SELECTOR, ".m-nav .m-nav-item div")
                 logger.info(f"nav: {nav_items}")
                 for idx, nav in enumerate(nav_items):
