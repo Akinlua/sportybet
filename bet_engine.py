@@ -1607,7 +1607,7 @@ class BetEngine(WebsiteOpener):
                                     actions.move_to_element(me2).click().perform()
                                     logger.info("ActionChains clicked backup market")
                     try:
-                        self._virtual_pick_toggle = 2 if pick_count == 1 else 1
+                        self._virtual_pick_toggle = 1 if pick_count == 1 else 1
                     except Exception:
                         pass
             except Exception:
@@ -3717,7 +3717,8 @@ class BetEngine(WebsiteOpener):
                     
                     # Check for duplicate bet before placing
                     logging.info(f"event details here: {event_details} ")
-                    event_id = event_details.get("id", "unknown")
+                    # Use primary event ID first, fallback to backup ID if missing
+                    event_id = event_details.get("eventId") or event_details.get("id") or "unknown"
                     market_id = market_type
                     outcome_id = outcome.upper()
                     bet_signature = self.__generate_bet_signature(
