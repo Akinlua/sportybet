@@ -1480,7 +1480,30 @@ class BetEngine(WebsiteOpener):
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window username-{account.username}: {e}")
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
-                self.driver.save_screenshot(f"market_content_not_detected_{timestamp}.png")
+                fname = f"market_content_not_detected_{timestamp}.png"
+                try:
+                    self.driver.execute_cdp_cmd("Page.enable", {})
+                    metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                    cs = metrics.get("contentSize", {})
+                    width = int(cs.get("width", 1920))
+                    height = int(cs.get("height", 1080))
+                    self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                        "mobile": False,
+                        "width": width,
+                        "height": height,
+                        "deviceScaleFactor": 1,
+                        "screenOrientation": {"type": "landscapePrimary", "angle": 0}
+                    })
+                    shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {
+                        "format": "png",
+                        "captureBeyondViewport": True
+                    })
+                    import base64
+                    with open(fname, "wb") as f:
+                        f.write(base64.b64decode(shot.get("data", "")))
+                except Exception:
+                    self.driver.save_screenshot(fname)
+                logger.info(f"Saved full-page screenshot: {fname}")
                 current_shaped_data = getattr(self, '_current_shaped_data', None)
                 try:
                     ev = self.__calculate_ev(odds, current_shaped_data) if current_shaped_data else -999
@@ -1530,7 +1553,31 @@ class BetEngine(WebsiteOpener):
             logger.info(f"Market element: {market_element}")
             if not market_element:
                 logger.error(f"Could not find market element username-{account.username}")
-                self.driver.save_screenshot(f"market_not_found.png")
+                # Capture full-page screenshot
+                try:
+                    self.driver.execute_cdp_cmd("Page.enable", {})
+                    metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                    cs = metrics.get("contentSize", {})
+                    width = int(cs.get("width", 1920))
+                    height = int(cs.get("height", 1080))
+                    self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                        "mobile": False,
+                        "width": width,
+                        "height": height,
+                        "deviceScaleFactor": 1,
+                        "screenOrientation": {"type": "landscapePrimary", "angle": 0}
+                    })
+                    shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {
+                        "format": "png",
+                        "captureBeyondViewport": True
+                    })
+                    import base64
+                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                    with open(f"market_not_found_{timestamp}.png", "wb") as f:
+                        f.write(base64.b64decode(shot.get("data", "")))
+                except Exception:
+                    # Fallback to regular screenshot
+                    self.driver.save_screenshot("market_not_found.png")
                 current_shaped_data = getattr(self, '_current_shaped_data', None)
                 try:
                     ev_odds = odds
