@@ -1479,7 +1479,8 @@ class BetEngine(WebsiteOpener):
                 logger.info("found market content")
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window username-{account.username}: {e}")
-                self.driver.save_screenshot(f"market_content_not_detected.png")
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                self.driver.save_screenshot(f"market_content_not_detected_{timestamp}.png")
                 current_shaped_data = getattr(self, '_current_shaped_data', None)
                 try:
                     ev = self.__calculate_ev(odds, current_shaped_data) if current_shaped_data else -999
