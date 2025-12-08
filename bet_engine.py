@@ -1483,6 +1483,7 @@ class BetEngine(WebsiteOpener):
                 current_shaped_data = getattr(self, '_current_shaped_data', None)
                 try:
                     ev = self.__calculate_ev(odds, current_shaped_data) if current_shaped_data else -999
+                    logger.info(f"ev: {ev} username-{account.username}")
                 except Exception:
                     ev = -999
                 if ev > self.__min_ev and not getattr(self, '_retry_once', False):
@@ -1533,6 +1534,7 @@ class BetEngine(WebsiteOpener):
                 try:
                     ev_odds = odds
                     ev = self.__calculate_ev(ev_odds, current_shaped_data) if current_shaped_data else -999
+                    logger.info(f"ev: {ev} username-{account.username}")
                 except Exception:
                     ev = -999
                 if ev > self.__min_ev and not getattr(self, '_retry_once', False):
