@@ -1480,7 +1480,18 @@ class BetEngine(WebsiteOpener):
             except Exception as e:
                 logger.warning(f"Market content not detected within wait window username-{account.username}: {e}")
                 self.driver.save_screenshot(f"market_content_not_detected.png")
-                # time.sleep(100)
+                current_shaped_data = getattr(self, '_current_shaped_data', None)
+                try:
+                    ev = self.__calculate_ev(odds, current_shaped_data) if current_shaped_data else -999
+                except Exception:
+                    ev = -999
+                if ev > self.__min_ev and not getattr(self, '_retry_once', False):
+                    logger.info(f"EV {ev} higher than min EV {self.__min_ev}, retrying once username-{account.username}")
+                    setattr(self, '_retry_once', True)
+                    try:
+                        return self.__place_bet_with_selenium(account, bet_url, market_type, outcome, odds, stake, points, is_first_half, home_team, away_team, sport_id)
+                    finally:
+                        setattr(self, '_retry_once', False)
                 return False
             
             # time.sleep(3)
@@ -1518,7 +1529,19 @@ class BetEngine(WebsiteOpener):
             if not market_element:
                 logger.error(f"Could not find market element username-{account.username}")
                 self.driver.save_screenshot(f"market_not_found.png")
-                # time.sleep(100)
+                current_shaped_data = getattr(self, '_current_shaped_data', None)
+                try:
+                    ev_odds = odds
+                    ev = self.__calculate_ev(ev_odds, current_shaped_data) if current_shaped_data else -999
+                except Exception:
+                    ev = -999
+                if ev > self.__min_ev and not getattr(self, '_retry_once', False):
+                    logger.info(f"EV is high enough: {ev} > {self.__min_ev} username-{account.username}")
+                    setattr(self, '_retry_once', True)
+                    try:
+                        return self.__place_bet_with_selenium(account, bet_url, market_type, outcome, odds, stake, points, is_first_half, home_team, away_team, sport_id)
+                    finally:
+                        setattr(self, '_retry_once', False)
                 return False
             
             try:
@@ -1866,14 +1889,41 @@ class BetEngine(WebsiteOpener):
                         
                 except Exception as e:
                     logger.error(f"❌ No success confirmation found: {e}")
-                    # Take screenshot of failed bet state
                     try:
-                        timestamp = time.strftime("%Y%m%d-%H%M%S")
-                        screenshot_path = f"failed_bet_screenshot_{timestamp}.png"
-                        self.driver.save_screenshot(screenshot_path)
-                        logger.info(f"Failed bet screenshot saved to username-{account.username} {screenshot_path}")
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"failed_bet_screenshot_{ts}.png"
+                        try:
+                            self.driver.execute_cdp_cmd("Page.enable", {})
+                            m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                            cs = m.get("contentSize", {})
+                            w = int(cs.get("width", 1920))
+                            h = int(cs.get("height", 1080))
+                            self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                            shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                            import base64
+                            with open(fname, "wb") as f:
+                                f.write(base64.b64decode(shot.get("data", "")))
+                        except Exception:
+                            self.driver.save_screenshot(fname)
+                        logger.info(f"Failed bet screenshot saved to username-{account.username}: {fname}")
                     except Exception as screenshot_error:
                         logger.error(f"Failed to take failed bet screenshot: {screenshot_error}")
+                    try:
+                        new_stake = float(stake) / 2.0
+                    except Exception:
+                        new_stake = stake
+                    current_shaped_data = getattr(self, '_current_shaped_data', None)
+                    try:
+                        ev_odds = float(odds)
+                        ev = self.__calculate_ev(ev_odds, current_shaped_data) if current_shaped_data else -999
+                    except Exception:
+                        ev = -999
+                    if ev > self.__min_ev and not getattr(self, '_retry_no_success_once', False):
+                        setattr(self, '_retry_no_success_once', True)
+                        try:
+                            return self.__place_bet_with_selenium(account, bet_url, market_type, outcome, odds, new_stake, points, is_first_half, home_team, away_team, sport_id)
+                        finally:
+                            setattr(self, '_retry_no_success_once', False)
                     return False
                     
             except Exception as e:
