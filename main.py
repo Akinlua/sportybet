@@ -52,7 +52,7 @@ def main():
             # Start monitoring for odds alerts
             print("Starting odds monitoring...")
             odds_engine.start_monitoring(
-                interval=int(os.getenv("ODDS_CHECK_INTERVAL", "60"))
+                interval=int(os.getenv("ODDS_CHECK_INTERVAL", "30"))
             )
             
             # Keep the main thread running to allow the monitoring to continue

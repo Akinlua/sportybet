@@ -183,9 +183,9 @@ class OddsEngine:
         current_time = int(time.time() * 1000)  # Current time in milliseconds
         time_diff_ms = current_time - alert_timestamp
         
-        # If alert is less than 30 seconds old, wait until it's 30 seconds old
-        if time_diff_ms < 30000:  # 30000 ms = 30 seconds
-            wait_time_seconds = (30000 - time_diff_ms) / 1000
+        # If alert is less than 1 second old, wait until it's 1 second old
+        if time_diff_ms < 1000:  # 1000 ms = 1 second
+            wait_time_seconds = (1000 - time_diff_ms) / 1000
             logger.info(f"Alert is only {time_diff_ms/1000:.1f} seconds old. Waiting {wait_time_seconds:.1f} seconds before processing.")
             time.sleep(wait_time_seconds)
             logger.info("Resuming alert processing after wait period.")
