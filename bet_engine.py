@@ -1487,7 +1487,6 @@ class BetEngine(WebsiteOpener):
                     "captureBeyondViewport": True
                 })
                 import base64
-                import time
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 fname = f"navigated_{account.username}_{timestamp}.png"
                 with open(fname, "wb") as f:
