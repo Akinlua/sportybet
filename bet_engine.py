@@ -1468,6 +1468,36 @@ class BetEngine(WebsiteOpener):
             
             logger.info(f"Navigating to betting page: {bet_url} username-{account.username}")
             self.open_url(bet_url)
+            # Full-page screenshot after navigation to confirm navigated_ state
+            try:
+                self.driver.execute_cdp_cmd("Page.enable", {})
+                metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                cs = metrics.get("contentSize", {})
+                width = int(cs.get("width", 1920))
+                height = int(cs.get("height", 1080))
+                self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                    "mobile": False,
+                    "width": width,
+                    "height": height,
+                    "deviceScaleFactor": 1,
+                    "screenOrientation": {"type": "landscapePrimary", "angle": 0}
+                })
+                shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {
+                    "format": "png",
+                    "captureBeyondViewport": True
+                })
+                import base64
+                import time
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                fname = f"navigated_{account.username}_{timestamp}.png"
+                with open(fname, "wb") as f:
+                    f.write(base64.b64decode(shot.get("data", "")))
+                logger.info(f"Saved full-page logged-in screenshot: {fname}")
+            except Exception:
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                fname = f"navigated_{account.username}_{timestamp}.png"
+                self.driver.save_screenshot(fname)
+                logger.info(f"Saved fallback logged-in screenshot: {fname}")
             # try:
             #     self.__ensure_session_after_nav(account, bet_url)
             # except Exception:
