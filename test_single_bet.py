@@ -43,8 +43,8 @@ def create_quick_alert(home_team, away_team, line_type, outcome, points=None, is
         "sportId": 1,  # Football (Sporty: sr:sport:1)
         "type": "prematch",
         "periodNumber": "1" if is_first_half else "0",
-        "eventId": "sr:match:65897796",
-        "starts": 1774544400000
+        "eventId": "sr:match:57797045",
+        "starts": 1766343600000
     }
     
     if points is not None:
@@ -80,149 +80,149 @@ def test_quick_scenarios():
     scenarios = {
         # "1": {
         #     "name": "Moneyline Home Win",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "home")
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "home")
         # },
         # "2": {
         #     "name": "Moneyline Home Draw",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "draw")
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "draw")
         # },
         # "3": {
         #     "name": "Moneyline Home away",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "away")
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "away")
         # },
         # "4": {
         #     "name": "Over 0.5 Goals",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "total", "over", points=0.5)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "total", "over", points=0.5)
         # },
         # "5": {
         #     "name": "Under 0.5 Goals",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "total", "under", points=0.5)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "total", "under", points=0.5)
         # },
         # "6": {
         #     "name": "Asian Handicap 1.5",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=1.5)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=1.5)
         # },
         #  "7": {
         #     "name": "Asian Handicap -1.5",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=-1.5)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=-1.5)
         # },
         # "8": {
         #     "name": "DNB (Zero Handicap)",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=0.0) 
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=0.0) 
         # },
         # "9": {
         #     "name": "DNB (Zero Handicap)",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=0.0) 
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=0.0) 
         # },
         # "10": {
         #     "name": "First half Moneyline Home Win",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "home", is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "home", is_first_half=True)
         # },
         # "11": {
         #     "name": "First half Moneyline Home Draw",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "draw", is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "draw", is_first_half=True)
         # },
         # "12": {
         #     "name": "First half Moneyline Home away",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "away", is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "away", is_first_half=True)
         # },
         # "13": {
         #     "name": "First half Over 1.5 Goals",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "total", "over", points=1.5, is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "total", "over", points=1.5, is_first_half=True)
         # },
         # "14": {
         #     "name": "First half Under 1.5 Goals",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "total", "under", points=1.5, is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "total", "under", points=1.5, is_first_half=True)
         # },
         # "15": {
         #     "name": "First half Asian Handicap 1.5",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=1.5, is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=1.5, is_first_half=True)
         # },
         # "16": {
         #     "name": "First half Asian Handicap -1.5",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=-1.5, is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=-1.5, is_first_half=True)
         # },
         # "17": {
         #     "name": "First half DNB (Zero Handicap)",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=0.0, is_first_half=True) 
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=0.0, is_first_half=True) 
         # },
         # "18": {
         #     "name": "First half DNB (Zero Handicap)",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=0.0, is_first_half=True) 
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=0.0, is_first_half=True) 
         # }
 
 
         "1": {
             "name": "Moneyline Home Win",
-            "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "home")
+            "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "home")
         },
         "2": {
             "name": "Moneyline Home Draw",
-            "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "draw")
+            "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "draw")
         },
         "3": {
             "name": "Moneyline Home away",
-            "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "away")
+            "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "away")
         },
         "4": {
             "name": "Over 158.5 Goals",
-            "alert": create_quick_alert("Turkiye", "Romania", "total", "over", points=158.5)  
+            "alert": create_quick_alert("Morocco", "Comoros", "total", "over", points=158.5)  
         },
         "5": {
             "name": "Under 161.5 Goals",
-            "alert": create_quick_alert("Turkiye", "Romania", "total", "under", points=161.5)  
+            "alert": create_quick_alert("Morocco", "Comoros", "total", "under", points=161.5)  
         },
         # "6": {
         #     "name": "Asian Handicap 1.5",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=1.5)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=1.5)
         # },
         #  "7": {
         #     "name": "Asian Handicap -1.5",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=-1.5)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=-1.5)
         # },
         "8": {
             "name": "DNB (Zero Handicap)",
-            "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=0.0) 
+            "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=0.0) 
         },
         "9": {
             "name": "DNB (Zero Handicap)",
-            "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=0.0) 
+            "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=0.0) 
         },
         # "10": {
         #     "name": "First half Moneyline Home Win",
-        #     "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "home", is_first_half=True)
+        #     "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "home", is_first_half=True)
         # },
         "11": {
             "name": "First half Moneyline Home Draw",
-            "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "draw", is_first_half=True)
+            "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "draw", is_first_half=True)
         },
         "12": {
             "name": "First half Moneyline Home away",
-            "alert": create_quick_alert("Turkiye", "Romania", "moneyline", "away", is_first_half=True)
+            "alert": create_quick_alert("Morocco", "Comoros", "moneyline", "away", is_first_half=True)
         },
         "13": {
             "name": "First half Over 78.5 Goals",
-            "alert": create_quick_alert("Turkiye", "Romania", "total", "over", points=78.5, is_first_half=True)
+            "alert": create_quick_alert("Morocco", "Comoros", "total", "over", points=78.5, is_first_half=True)
         },
         "14": {
             "name": "First half Under 78.5 Goals",
-            "alert": create_quick_alert("Turkiye", "Romania", "total", "under", points=78.5, is_first_half=True)
+            "alert": create_quick_alert("Morocco", "Comoros", "total", "under", points=78.5, is_first_half=True)
         },
         "15": {
             "name": "First half Asian Handicap 3.5",
-            "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=3.5, is_first_half=True)
+            "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=3.5, is_first_half=True)
         },
         "16": {
             "name": "First half Asian Handicap -3.5",
-            "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=-3.5, is_first_half=True)
+            "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=-3.5, is_first_half=True)
         },
         "17": {
             "name": "First half DNB (Zero Handicap)",
-            "alert": create_quick_alert("Turkiye", "Romania", "spread", "home", points=0.0, is_first_half=True) 
+            "alert": create_quick_alert("Morocco", "Comoros", "spread", "home", points=0.0, is_first_half=True) 
         },
         "18": {
             "name": "First half DNB (Zero Handicap)",
-            "alert": create_quick_alert("Turkiye", "Romania", "spread", "away", points=0.0, is_first_half=True) 
+            "alert": create_quick_alert("Morocco", "Comoros", "spread", "away", points=0.0, is_first_half=True) 
         }
     }
     
@@ -342,19 +342,19 @@ def run_single_test(bet_engine, alert_data, scenario_name):
                     "id": "sr:category:4",
                     "name": "International",
                     "tournament": {
-                        "id": "sr:tournament:11",
-                        "name": "FIFA World Cup Qualification, UEFA"
+                        "id": "sr:tournament:270",
+                        "name": "Africa Cup of Nations"
                     }
                 }
             },
-            "sportId": 2,
+            "sportId": 1,
             # "sport": sport_info,
             # Markets not needed for direct placement, but kept for completeness
             "markets": []
         }
         
         # Mock odds (you can adjust these test values)
-        test_odds = 1.57  # Default test odds
+        test_odds = 1.18  # Default test odds
         
         # Extract bet parameters
         line_type = alert_data['lineType']
@@ -512,18 +512,18 @@ def main():
                             "id": "sr:category:4",
                             "name": "International",
                             "tournament": {
-                                "id": "sr:tournament:11",
-                                "name": "FIFA World Cup Qualification, UEFA"
+                                "id": "sr:tournament:270",
+                                "name": "Africa Cup of Nations"
                             }
                         }
                     },
-                    "sportId": 2,
+                    "sportId": 1,
                     # "sport": sport_info,
                     # Markets not needed for direct placement, but kept for completeness
                     "markets": []
                 }
                 
-                odds = 1.57
+                odds = 1.18
                 import time
                 for _ in range(count):
                     BET_ENGINE._BetEngine__place_bet(
