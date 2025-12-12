@@ -53,3 +53,27 @@ const proxy = 'http://brd-customer-hl_3fa1037b-zone-datacenter_proxy1-country-ng
         },
 
 
+{
+            "username": "09044976808",
+            "password": "Amarachi2",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42017"
+        },
+        {
+            "username": "09063690727",
+            "password": "Aquavie@27.",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42012"
+        },
+        {
+            "username": "09131765912",
+            "password": "Amaka1234",
+            "active": true,
+            "max_concurrent_bets": 20,
+            "min_balance": 100,
+            "proxy": "http://ng.decodo.com:42042"
+        }

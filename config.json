@@ -6,7 +6,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42054"
+            "proxy": "http://isp.decodo.com:10001"
         },
         {
             "username": "8149394431",
@@ -14,7 +14,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42024"
+            "proxy": "http://isp.decodo.com:10002"
         },
         {
             "username": "7025027406",
@@ -22,31 +22,7 @@
             "active": true,
             "max_concurrent_bets": 20,
             "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42032"
-        },
-        {
-            "username": "09044976808",
-            "password": "Amarachi2",
-            "active": true,
-            "max_concurrent_bets": 20,
-            "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42017"
-        },
-        {
-            "username": "09063690727",
-            "password": "Aquavie@27.",
-            "active": true,
-            "max_concurrent_bets": 20,
-            "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42012"
-        },
-        {
-            "username": "09131765912",
-            "password": "Amaka1234",
-            "active": true,
-            "max_concurrent_bets": 20,
-            "min_balance": 100,
-            "proxy": "http://ng.decodo.com:42042"
+            "proxy": "http://isp.decodo.com:10003"
         }
     ],
     "max_total_concurrent_bets": 20,
