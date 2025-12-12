@@ -1849,6 +1849,32 @@ class BetEngine(WebsiteOpener):
                                 pass
                             return False
                 try:
+                    active_key = self.driver.execute_script("var el=document.querySelector('.m-list-nav .m-table-row .m-table-cell.m-table-cell--active span[data-cms-key]'); return el ? (el.getAttribute('data-cms-key') || el.textContent.trim().toLowerCase()) : null;")
+                except Exception:
+                    active_key = None
+                if (active_key or '').lower() != 'multiple':
+                    logger.warning(f"Betslip tab not 'Multiple' (got: {active_key}) username-{account.username}. Aborting placement.")
+                    try:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"wrong_betslip_mode_{account.username}_{ts}.png"
+                        self.driver.execute_cdp_cmd("Page.enable", {})
+                        m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                        cs = m.get("contentSize", {})
+                        w = int(cs.get("width", 1920))
+                        h = int(cs.get("height", 1080))
+                        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                        shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                        import base64
+                        with open(fname, "wb") as f:
+                            f.write(base64.b64decode(shot.get("data", "")))
+                        logger.info(f"Saved full-page wrong-mode screenshot: {fname}")
+                    except Exception:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"wrong_betslip_mode_2{account.username}_{ts}.png"
+                        self.driver.save_screenshot(fname)
+                    return False
+                    
+                try:
                     confirm_span = WebDriverWait(self.driver, 15).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "button.af-button.af-button--primary span span[data-cms-key='confirm']"))
                     )
