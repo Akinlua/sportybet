@@ -180,6 +180,14 @@ class WebsiteOpener:
             self.proxy = self.get_proxy_from_config()
 
         options = Options()
+        # --headless=new
+        # --no-sandbox
+        # --disable-dev-shm-usage
+        # --disable-gpu
+        # --disable-software-rasterizer
+        # --single-process
+        # --no-zygote
+
         options.add_argument("--headless=new")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")

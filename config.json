@@ -4,7 +4,7 @@
             "username": "7036037447",
             "password": "@IfeeGod2021",
             "active": true,
-            "max_concurrent_bets": 5,
+            "max_concurrent_bets": 4,
             "min_balance": 100,
             "proxy": "http://isp.decodo.com:10001"
         },
@@ -12,7 +12,7 @@
             "username": "8149394431",
             "password": "Malima2025",
             "active": true,
-            "max_concurrent_bets": 5,
+            "max_concurrent_bets": 4,
             "min_balance": 100,
             "proxy": "http://isp.decodo.com:10002"
         },
@@ -20,12 +20,12 @@
             "username": "7025027406",
             "password": "@Royalbird1",
             "active": true,
-            "max_concurrent_bets": 5,
+            "max_concurrent_bets": 4,
             "min_balance": 100,
             "proxy": "http://isp.decodo.com:10003"
         }
     ],
-    "max_total_concurrent_bets": 5,
+    "max_total_concurrent_bets": 4,
     "use_proxies": false,
     "immediate_bet_placement": false,
     "browser": {
