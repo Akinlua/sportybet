@@ -210,6 +210,7 @@ class BetEngine(WebsiteOpener):
         
         # Track placed bets to avoid duplicates (max 1000)
         self.__placed_bets = {}  # Key: bet_signature, Value: bet_details
+        self.__used_virtual_event_ids = set()
         
         # Track found outcomes per game to avoid checking opposite outcomes
         self.__game_found_outcomes = {}  # Key: game_id, Value: set of found outcomes
@@ -1680,6 +1681,11 @@ class BetEngine(WebsiteOpener):
                     pick_count = getattr(self, "_virtual_pick_toggle", 1)
                     sel = low_candidates[:min(len(low_candidates), pick_count)]
                     for target in sel:
+                        try:
+                            if target.get("event_id"):
+                                self.__used_virtual_event_ids.add(target["event_id"])
+                        except Exception:
+                            pass
                         self.open_url(target["url"])
                         try:
                             self.__ensure_session_after_nav(account, target["url"])
@@ -1856,7 +1862,7 @@ class BetEngine(WebsiteOpener):
                     logger.warning(f"Betslip tab not 'Multiple' (got: {active_key}) username-{account.username}. Aborting placement.")
                     try:
                         ts = time.strftime("%Y%m%d-%H%M%S")
-                        fname = f"wrong_betslip_mode_{account.username}_{ts}.png"
+                        fname = f"wrong_betslip_mode_2{account.username}_{ts}.png"
                         self.driver.execute_cdp_cmd("Page.enable", {})
                         m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
                         cs = m.get("contentSize", {})
@@ -2287,8 +2293,10 @@ class BetEngine(WebsiteOpener):
                             "market_type": best_info["market_type"],
                             "outcome": best_info["outcome"],
                             "points": best_info["points"],
-                            "odds": best_info["odds"]
+                            "odds": best_info["odds"],
+                            "event_id": eid
                         })
+            candidates = [c for c in candidates if c.get("event_id") not in self.__used_virtual_event_ids]
             candidates.sort(key=lambda x: x.get("odds", 9999))
             logger.info(f"Found {len(candidates)} candidates for {home} vs {away}")
             return candidates[:limit]
