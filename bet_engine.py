@@ -4063,6 +4063,7 @@ class BetEngine(WebsiteOpener):
                                     if abs(pts - rp) < 0.01:
                                         odds = o.get("odds") or o.get("value")
                                         return o.get("id"), float(odds), pts
+            logger.info("the market code not found in event details")
             return None, None, None
        
         else:
