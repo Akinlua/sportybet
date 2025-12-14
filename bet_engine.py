@@ -3760,7 +3760,8 @@ class BetEngine(WebsiteOpener):
 
                 for points in candidate_points:
                     # Map Pinnacle Asian Handicap to sportybet regular handicap (skip mapping for basketball)
-                    sportybet_points = points if is_basketball else self.__map_asian_handicap_to_sportybet(points)
+                    # sportybet_points = points if is_basketball else self.__map_asian_handicap_to_sportybet(points)
+                    sportybet_points = points
                     logger.info(f"sportybet points: {sportybet_points}")
                     bet_code, odds, actual_points = self.__find_market_bet_code_with_points(
                         event_details, "spread", sportybet_points, outcome, is_first_half, sport_id, home_team, away_team
