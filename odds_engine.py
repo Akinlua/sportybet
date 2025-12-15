@@ -400,9 +400,10 @@ class OddsEngine:
         - Boolean indicating if the bet was successfully processed and placed
         """
         try:
-            # The bet_engine.notify method returns True if a bet was placed (EV > min_EV)
-            result = self.bet_engine.notify(shaped_data)
-            return result if result is not None else False
+            # Run bet_engine.notify in a background thread to avoid blocking the odds loop
+            # Return True immediately so we mark this alert as processed
+            threading.Thread(target=self.bet_engine.notify, args=(shaped_data,), daemon=True).start()
+            return True
         except Exception as e:
             logger.error(f"Error notifying bet engine: {e}")
             return False

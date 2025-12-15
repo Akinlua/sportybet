@@ -1,6 +1,5 @@
 from selenium_script import WebsiteOpener
 import os
-import subprocess
 import time
 import json
 import re
@@ -235,8 +234,6 @@ class BetEngine(WebsiteOpener):
         #     self.__do_login()
         
         # Start bet worker thread for queued bet placement
-        self.__active_bet_count = 0
-        self.__active_bet_lock = threading.Lock()
         self.__start_bet_worker()
     
     # Thread-local driver property to avoid cross-thread overrides
@@ -568,20 +565,6 @@ class BetEngine(WebsiteOpener):
             logger.warning("No accounts configured for initial login")
 
             
-    def __kill_all_browsers(self):
-        """Kill all chrome/chromium processes to free memory"""
-        logger.info("Queue empty and no active bets. Cleaning up all browser processes...")
-        commands = [
-            "sudo pkill -f chrome",
-            "sudo pkill -f chromium",
-            "sudo pkill -f chromedriver"
-        ]
-        for cmd in commands:
-            try:
-                subprocess.run(cmd.split(), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception as e:
-                logger.error(f"Failed to execute cleanup command {cmd}: {e}")
-
     def __start_bet_worker(self):
         workers = int(self.__config.get("max_total_concurrent_bets", 20))
         self.__worker_threads = []
@@ -597,30 +580,11 @@ class BetEngine(WebsiteOpener):
                 # Get bet data from queue
                 bet_data = self.__bet_queue.get()
                 
-                # Increment active bet counter
-                with self.__active_bet_lock:
-                    self.__active_bet_count += 1
+                # Place bet with available accounts
+                self.__place_bet_with_available_account(bet_data)
                 
-                try:
-                    # Place bet with available accounts
-                    self.__place_bet_with_available_account(bet_data)
-                finally:
-                    # Mark task as done
-                    self.__bet_queue.task_done()
-                    
-                    # Decrement active bet counter
-                    with self.__active_bet_lock:
-                        self.__active_bet_count -= 1
-                    
-                    # Check if we should kill browsers
-                    should_kill = False
-                    with self.__active_bet_lock:
-                         if self.__bet_queue.empty() and self.__active_bet_count == 0:
-                             should_kill = True
-                    
-                    if should_kill:
-                        self.__kill_all_browsers()
-                        logger.info("All bets processed. Cleaning up browser processes...")
+                # Mark task as done
+                self.__bet_queue.task_done()
                 
             except Exception as e:
                 logger.error(f"Error in bet worker thread: {e}")
@@ -776,8 +740,8 @@ class BetEngine(WebsiteOpener):
                 logger.info(f"Navigated to login page: {login_url}")
             except Exception as get_err:
                 msg = str(get_err).lower()
-                if ("invalid session id" in msg or "disconnected" in msg or "connection refused" in msg or "max retries exceeded" in msg or "chrome not reachable" in msg):
-                    logger.error(f"Invalid Selenium session detected ({msg}). Restarting browser and retrying login navigation...")
+                if ("invalid session id" in msg or "disconnected" in msg):
+                    logger.error("Invalid Selenium session detected. Restarting browser and retrying login navigation...")
                     self.__restart_browser(account)
                     self.driver.get(login_url)
                     logger.info(f"Navigated to login page after restart: {login_url}")
@@ -1360,7 +1324,7 @@ class BetEngine(WebsiteOpener):
         #     pass
         
         WebDriverWait(self.driver, timeout_seconds, poll_frequency=0.5).until(
-            lambda d: d.execute_script("return !!(document.querySelector('.m-against') || document.querySelector('.m-detail-wrapper'));")
+            lambda d: d.execute_script("return !!document.querySelector('.m-against');")
         )
         # .m-eventDetail
         # "document.querySelector('.m-table-cell--responsive'));"
@@ -1707,10 +1671,53 @@ class BetEngine(WebsiteOpener):
                     logger.error(f"Could not click market element: {e}")
                     return False
             
-            # Virtuals navigation block removed by refactor
-            # Ensure session is still valid before entering stake
+            # Navigate to a low-odds virtual event URL before entering stake
             try:
-                self.__ensure_session_after_nav(account, bet_url)
+                logger.info(f"working on dummy veirtuals now2")
+                low_candidates = self.__get_low_odds_virtual_candidates(account, max_odds=1.2, limit=5)
+                logger.info(f"Candidates: {low_candidates}")
+                if low_candidates:
+                    logger.info(f"Found {len(low_candidates)} low-odds virtual candidates")
+                    pick_count = getattr(self, "_virtual_pick_toggle", 1)
+                    sel = low_candidates[:min(len(low_candidates), pick_count)]
+                    for target in sel:
+                        try:
+                            if target.get("event_id"):
+                                self.__used_virtual_event_ids.add(target["event_id"])
+                        except Exception:
+                            pass
+                        self.open_url(target["url"])
+                        try:
+                            self.__ensure_session_after_nav(account, target["url"])
+                        except Exception:
+                            pass
+
+                        try:
+                            self.__wait_for_market_content(timeout_seconds=60)
+                            logger.info("found market content")
+                            # WebDriverWait(self.driver, 10).until(
+                            #     lambda d: d.execute_script("return document.querySelectorAll('.m-table__wrapper').length > 0;")
+                            # )
+                        except Exception:
+                            pass
+                        me2, _o2 = self.__get_market_selector(target["market_type"], target["outcome"], target.get("points"), False, target.get("home"), target.get("away"))
+                        if me2:
+                            try:
+                                WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(me2))
+                                me2.click()
+                                logger.info(f"Clicked backup low-odds market: {target['market_type']} - {target['outcome']} - {target.get('points')}")
+                            except Exception:
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", me2)
+                                    logger.info("JavaScript clicked backup market")
+                                except Exception:
+                                    actions = ActionChains(self.driver)
+                                    actions.move_to_element(me2).click().perform()
+                                    logger.info("ActionChains clicked backup market")
+                    try:
+                        self._virtual_pick_toggle = 1 if pick_count == 1 else 1
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -1781,6 +1788,32 @@ class BetEngine(WebsiteOpener):
                 
                 button_text = place_bet_button.text.strip()
                 logger.info(f"Found bet button with text: {button_text}")
+                
+                try:
+                    active_key = self.driver.execute_script("var el=document.querySelector('.m-list-nav .m-table-row .m-table-cell.m-table-cell--active span[data-cms-key]'); return el ? (el.getAttribute('data-cms-key') || el.textContent.trim().toLowerCase()) : null;")
+                except Exception:
+                    active_key = None
+                if (active_key or '').lower() != 'multiple':
+                    logger.warning(f"Betslip tab not 'Multiple' (got: {active_key}) username-{account.username}. Aborting placement.")
+                    try:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"wrong_betslip_mode_{account.username}_{ts}.png"
+                        self.driver.execute_cdp_cmd("Page.enable", {})
+                        m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                        cs = m.get("contentSize", {})
+                        w = int(cs.get("width", 1920))
+                        h = int(cs.get("height", 1080))
+                        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                        shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                        import base64
+                        with open(fname, "wb") as f:
+                            f.write(base64.b64decode(shot.get("data", "")))
+                        logger.info(f"Saved full-page wrong-mode screenshot: {fname}")
+                    except Exception:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"wrong_betslip_mode_{account.username}_{ts}.png"
+                        self.driver.save_screenshot(fname)
+                    return False
 
                 try:
                     self.driver.execute_script("document.querySelectorAll('.m-bablance-wrapper,.m-balance-wrapper,.af-toast').forEach(el=>{try{el.style.pointerEvents='none'}catch(e){}});")
@@ -1788,34 +1821,20 @@ class BetEngine(WebsiteOpener):
                     WebDriverWait(self.driver, 10).until(
                         lambda d: d.execute_script("const el=arguments[0]; const r=el.getBoundingClientRect(); const x=r.left+r.width/2; const y=r.top+r.height/2; const topEl=document.elementFromPoint(x,y); return topEl===el || el && el.contains(topEl);", place_bet_button)
                     )
-                    # Robust Accept Changes Loop
-                    accept_start_time = time.time()
-                    while True:
-                        if time.time() - accept_start_time > 45:
-                            logger.error(f"Timed out waiting for odds to stabilize username-{account.username}")
-                            return False
-
-                        if "accept changes" in (button_text or "").lower():
-                            logger.info(f"Button says 'Accept Changes'. Clicking to accept... username-{account.username}")
-                            place_bet_button.click()
-                            
-                            # Wait briefly for UI update then check button again
-                            time.sleep(1)
-                            try:
-                                place_bet_button = WebDriverWait(self.driver, 10).until(
-                                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div.m-btn-wrapper button.af-button.af-button--primary"))
-                                )
-                                button_text = place_bet_button.text.strip()
-                                logger.info(f"Button text updated to: {button_text}")
-                                continue # Check loop condition again
-                            except Exception as e:
-                                logger.error(f"Error refreshing bet button: {e}")
-                                return False
-                        else:
-                            # Ready to place bet
-                            place_bet_button.click()
-                            logger.info("Clicked final 'Place Bet' button")
-                            break
+                    if "accept changes" in (button_text or "").lower():
+                        place_bet_button.click()
+                        time.sleep(0.5)
+                        try:
+                            place_bet_button = WebDriverWait(self.driver, 10).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, "div.m-btn-wrapper button.af-button.af-button--primary"))
+                            )
+                        except Exception:
+                            pass
+                        place_bet_button.click()
+                        logger.info("Accepted changes and clicked bet button")
+                    else:
+                        place_bet_button.click()
+                        logger.info("Clicked bet button")
                 except Exception as click_error:
                     logger.error(f"Place bet click intercepted, trying fallbacks: {click_error}")
                     try:
@@ -1835,6 +1854,31 @@ class BetEngine(WebsiteOpener):
                             except Exception:
                                 pass
                             return False
+                try:
+                    active_key = self.driver.execute_script("var el=document.querySelector('.m-list-nav .m-table-row .m-table-cell.m-table-cell--active span[data-cms-key]'); return el ? (el.getAttribute('data-cms-key') || el.textContent.trim().toLowerCase()) : null;")
+                except Exception:
+                    active_key = None
+                if (active_key or '').lower() != 'multiple':
+                    logger.warning(f"Betslip tab not 'Multiple' (got: {active_key}) username-{account.username}. Aborting placement.")
+                    try:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"wrong_betslip_mode_2{account.username}_{ts}.png"
+                        self.driver.execute_cdp_cmd("Page.enable", {})
+                        m = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                        cs = m.get("contentSize", {})
+                        w = int(cs.get("width", 1920))
+                        h = int(cs.get("height", 1080))
+                        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"mobile": False, "width": w, "height": h, "deviceScaleFactor": 1, "screenOrientation": {"type": "landscapePrimary", "angle": 0}})
+                        shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+                        import base64
+                        with open(fname, "wb") as f:
+                            f.write(base64.b64decode(shot.get("data", "")))
+                        logger.info(f"Saved full-page wrong-mode screenshot: {fname}")
+                    except Exception:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        fname = f"wrong_betslip_mode_2{account.username}_{ts}.png"
+                        self.driver.save_screenshot(fname)
+                    return False
                     
                 try:
                     confirm_span = WebDriverWait(self.driver, 15).until(
@@ -1853,6 +1897,76 @@ class BetEngine(WebsiteOpener):
                             pass
                 except Exception:
                     pass
+                
+                # If button says "Accept Odds...", odds have changed - need to recalculate EV
+                # if "accept odds" in button_text.lower():
+                #     logger.warning("⚠️ Odds have changed! discarding bet...")
+                #     return False
+                    # try:
+                    #     # Get the shaped_data from the current bet context
+                    #     current_shaped_data = getattr(self, '_current_shaped_data', None)
+                    #     if not current_shaped_data:
+                    #         logger.error("No shaped_data available for EV recalculation")
+                    #         self.__take_screenshot("odds_change_no_shaped_data")
+                    #         return False
+                        
+                    #     # Get event ID from shaped data and fetch event details
+                    #     event_id = current_shaped_data.get("eventId")
+                    #     if not event_id:
+                    #         logger.error("No eventId found in shaped data")
+                    #         self.__take_screenshot("odds_change_no_event_id")
+                    #         return False
+                        
+                    #     # Get event details from sportybet API to get exact odds
+                    #     event_details = self.__get_event_details(event_id)
+                    #     if not event_details:
+                    #         logger.error("Failed to get event details from sportybet API")
+                    #         self.__take_screenshot("odds_change_no_event_details")
+                    #         return False
+                        
+                    #     # Extract bet parameters from shaped_data
+                    #     line_type = current_shaped_data["category"]["type"].lower()
+                    #     outcome = current_shaped_data["category"]["meta"]["team"]
+                    #     points = current_shaped_data["category"]["meta"].get("value")
+                    #     is_first_half = current_shaped_data.get("periodNumber") == "1"
+                    #     home_team = current_shaped_data["game"]["home"]
+                    #     away_team = current_shaped_data["game"]["away"]
+                        
+                    #     # Get the exact market and odds from sportybet API using the same method as initial bet
+                    #     bet_code, new_odds, _ = self.__find_market_bet_code_with_points(
+                    #         event_details, line_type, outcome, points, is_first_half, home_team, away_team
+                    #     )
+                        
+                    #     if not new_odds:
+                    #         logger.error("Could not get new odds from sportybet API")
+                    #         self.__take_screenshot("odds_change_no_odds_from_api")
+                    #         return False
+                        
+                    #     logger.info(f"New odds from sportybet API: {new_odds}")
+                        
+                    #     # Recalculate EV with new odds
+                    #     new_ev = self.__calculate_ev(new_odds, current_shaped_data)
+                    #     logger.info(f"📊 Recalculated EV with new odds {new_odds}: {new_ev:.2f}%")
+                        
+                    #     if new_ev > 0:
+                    #         logger.info("✅ EV still positive, accepting odds change...")
+                    #         time.sleep(1)  # Wait a moment for button to update
+                            
+                    #         # Click accept odds button
+                    #         updated_button = WebDriverWait(self.driver, 10).until(
+                    #             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.betslip-bet-button"))
+                    #         )
+                    #         updated_button.click()
+                    #         logger.info("Clicked accept odds button")
+                    #     else:
+                    #         logger.warning(f"❌ EV turned negative ({new_ev:.2f}%), aborting bet...")
+                    #         self.__take_screenshot("odds_change_negative_ev")
+                    #         return False  # Abort this bet
+                            
+                    # except Exception as odds_check_error:
+                    #     logger.error(f"Error checking odds change: {odds_check_error}")
+                    #     self.__take_screenshot("odds_change_error")
+                    #     return False  # Any error = abort bet
                 
                 # Wait for success confirmation
                 try:
