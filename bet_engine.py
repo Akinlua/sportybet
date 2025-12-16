@@ -1505,39 +1505,44 @@ class BetEngine(WebsiteOpener):
             
             logger.info(f"Navigating to betting page: {bet_url} username-{account.username}")
             self.open_url(bet_url)
+
             # Full-page screenshot after navigation to confirm navigated_ state
-            # try:
-            #     self.driver.execute_cdp_cmd("Page.enable", {})
-            #     metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
-            #     cs = metrics.get("contentSize", {})
-            #     width = int(cs.get("width", 1920))
-            #     height = int(cs.get("height", 1080))
-            #     self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
-            #         "mobile": False,
-            #         "width": width,
-            #         "height": height,
-            #         "deviceScaleFactor": 1,
-            #         "screenOrientation": {"type": "landscapePrimary", "angle": 0}
-            #     })
-            #     shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {
-            #         "format": "png",
-            #         "captureBeyondViewport": True
-            #     })
-            #     import base64
-            #     timestamp = time.strftime("%Y%m%d-%H%M%S")
-            #     fname = f"navigated_{account.username}_{timestamp}.png"
-            #     with open(fname, "wb") as f:
-            #         f.write(base64.b64decode(shot.get("data", "")))
-            #     logger.info(f"Saved full-page logged-in screenshot: {fname}")
-            # except Exception:
-            #     timestamp = time.strftime("%Y%m%d-%H%M%S")
-            #     fname = f"navigated_{account.username}_{timestamp}.png"
-            #     self.driver.save_screenshot(fname)
-            #     logger.info(f"Saved fallback logged-in screenshot: {fname}")
-            # try:
-            #     self.__ensure_session_after_nav(account, bet_url)
-            # except Exception:
-            #     pass
+            try:
+                self.driver.execute_cdp_cmd("Page.enable", {})
+                metrics = self.driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
+                cs = metrics.get("contentSize", {})
+                width = int(cs.get("width", 1920))
+                height = int(cs.get("height", 1080))
+                self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                    "mobile": False,
+                    "width": width,
+                    "height": height,
+                    "deviceScaleFactor": 1,
+                    "screenOrientation": {"type": "landscapePrimary", "angle": 0}
+                })
+                shot = self.driver.execute_cdp_cmd("Page.captureScreenshot", {
+                    "format": "png",
+                    "captureBeyondViewport": True
+                })
+                import base64
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                fname = f"navigated_{account.username}_{timestamp}.png"
+                with open(fname, "wb") as f:
+                    f.write(base64.b64decode(shot.get("data", "")))
+                logger.info(f"Saved full-page logged-in screenshot: {fname}")
+            except Exception:
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                fname = f"navigated_{account.username}_{timestamp}.png"
+                self.driver.save_screenshot(fname)
+                logger.info(f"Saved fallback logged-in screenshot: {fname}")
+
+            # Ensure session is still valid before entering stake
+            try:
+                logger.info(f"loggin in here now")
+                self.__ensure_session_after_nav(account, bet_url)
+            except Exception:
+                pass
+
             # Wait for the market content to render instead of using sleep
             logger.info(f"about to check market content username-{account.username}")
             try:
@@ -1708,11 +1713,6 @@ class BetEngine(WebsiteOpener):
                     return False
             
             # Virtuals navigation block removed by refactor
-            # Ensure session is still valid before entering stake
-            try:
-                self.__ensure_session_after_nav(account, bet_url)
-            except Exception:
-                pass
 
             # Enter stake amount using new sportybet selectors
             try:
